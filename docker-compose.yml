@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment: {POSTGRES_PASSWORD: studio, POSTGRES_DB: studio}
+    volumes: [pgdata:/var/lib/postgresql/data]
+  redis:
+    image: redis:7-alpine
+  api:
+    build: ./backend
+    env_file: [{path: .env, required: false}]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:studio@db/studio
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /data
+    volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices:ro]
+    ports: ["8000:8000"]
+    depends_on: [db, redis]
+  worker:
+    build: ./backend
+    env_file: [{path: .env, required: false}]
+    # one worker container per host: on start it re-queues renders its predecessor was running
+    command: celery -A app.worker worker -Q default,render --concurrency 2 --loglevel info
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:studio@db/studio
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /data
+    volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices:ro]
+    depends_on: [db, redis]
+  web:
+    build:
+      context: ./frontend
+      args: {NEXT_PUBLIC_API_URL: "http://localhost:8000"}
+    ports: ["3000:3000"]
+    depends_on: [api]
+volumes:
+  pgdata:
+  media:
