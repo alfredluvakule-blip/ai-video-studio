@@ -1,0 +1,9 @@
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.env
+storage/
+*.db
+voices/*.onnx*
+.pytest_cache/
