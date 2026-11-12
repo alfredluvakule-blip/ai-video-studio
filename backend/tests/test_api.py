@@ -126,3 +126,14 @@ def test_upload_validation(client):
     assert r.status_code == 422
     r = client.post("/api/media", headers=h, files={"file": ("x.exe", b"MZ", "application/octet-stream")})
     assert r.status_code == 415
+
+
+def test_inline_comment_values_count_as_unset(monkeypatch):
+    from app import config
+
+    monkeypatch.setenv("HF_TOKEN", "# free Hugging Face token")
+    monkeypatch.setenv("COMFYUI_URL", "   ")
+    assert config._opt("HF_TOKEN") is None
+    assert config._opt("COMFYUI_URL") is None
+    monkeypatch.setenv("HF_TOKEN", "hf_abc")
+    assert config._opt("HF_TOKEN") == "hf_abc"
