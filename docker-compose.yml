@@ -3,8 +3,15 @@ services:
     image: postgres:16-alpine
     environment: {POSTGRES_PASSWORD: studio, POSTGRES_DB: studio}
     volumes: [pgdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d studio"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
   api:
     build: ./backend
     env_file: [{path: .env, required: false}]
@@ -14,7 +21,10 @@ services:
       STORAGE_DIR: /data
     volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices:ro]
     ports: ["8000:8000"]
-    depends_on: [db, redis]
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_started}
   worker:
     build: ./backend
     env_file: [{path: .env, required: false}]
@@ -25,12 +35,16 @@ services:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data
     volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices:ro]
-    depends_on: [db, redis]
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_started}
   web:
     build:
       context: ./frontend
       args: {NEXT_PUBLIC_API_URL: "http://localhost:8000"}
     ports: ["3000:3000"]
+    restart: unless-stopped
     depends_on: [api]
 volumes:
   pgdata:
