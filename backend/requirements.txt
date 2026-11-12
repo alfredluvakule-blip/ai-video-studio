@@ -12,3 +12,4 @@ pyjwt>=2.8
 pydantic>=2.7
 # optional: Whisper subtitles for uploaded voice recordings
 # faster-whisper>=1.0
+packaging>=23.0  # needed by kombu's Redis transport (celery worker), which does not declare it
