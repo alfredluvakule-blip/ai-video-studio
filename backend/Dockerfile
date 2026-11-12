@@ -4,6 +4,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg espeak-n
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Natural-sounding narrator voices (Piper, runs on the CPU). Kept as its own step so a
+# download problem here does not stop the app from building: the robotic eSpeak voice
+# is used instead, and the Settings page shows that Piper is missing.
+RUN pip install --no-cache-dir "piper-tts>=1.3,<2" \
+    || echo "WARNING: piper-tts could not be installed; narration will use eSpeak NG"
 COPY app ./app
 ENV STORAGE_DIR=/data
 EXPOSE 8000

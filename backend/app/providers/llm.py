@@ -1,6 +1,9 @@
 """Script + storyboard writers.
 
 * OllamaWriter      - free, local LLM (e.g. llama3.2, mistral, qwen) via Ollama.
+* GeminiWriter      - Google Gemini through a free Google AI Studio key (GEMINI_API_KEY).
+                      Google's free tier is rate-limited and Google may use free-tier
+                      content to improve its products.
 * HuggingFaceWriter - Hugging Face Inference router (free tier, needs HF_TOKEN, rate limited).
 * TemplateWriter    - no AI. Splits the user's own script/prompt into timed scenes.
                       Always available; it never invents narration.
@@ -11,6 +14,7 @@ import json
 import logging
 import math
 import re
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -122,7 +126,8 @@ class TemplateWriter:
         if len(chunks) < n:
             notes.append(
                 f"{n - len(chunks)} scene(s) have no narration: the rule-based writer does not invent text. "
-                "Write the voice-over in the storyboard, paste a full script, or connect Ollama / Hugging Face."
+                "Write the voice-over in the storyboard, paste a full script, or connect an AI writer "
+                "(a free Gemini key, Ollama or Hugging Face)."
             )
         return scenes, notes
 
@@ -178,7 +183,7 @@ class _LLMWriter:
         if req.script.strip() or (req.mode == "image" and req.image_count):
             # The user's own words stay authoritative; the LLM only adds visuals.
             scenes, notes = TemplateWriter().storyboard(req)
-            return self._enrich(scenes, req), notes
+            return self._enrich(scenes, req, notes), notes
         n = max(1, round(req.target_seconds / req.scene_seconds))
         words = int(req.scene_seconds * WORDS_PER_SECOND.get(req.language, 2.4))
         scenes: list[dict] = []
@@ -209,24 +214,34 @@ class _LLMWriter:
             scenes.extend(batch)
         return scenes, []
 
-    def _enrich(self, scenes: list[dict], req: StoryboardRequest) -> list[dict]:
+    def _enrich(self, scenes: list[dict], req: StoryboardRequest, notes: list[str] | None = None) -> list[dict]:
+        missed, why = 0, ""
         for start in range(0, len(scenes), self.batch):
             part = scenes[start : start + self.batch]
             listing = "\n".join(f"{i + 1}. {s['voiceover'] or s['visual_description']}" for i, s in enumerate(part))
             prompt = (
                 f"Topic: {req.prompt}\nStyle: {req.style}\nFor each numbered narration line below, write a "
                 "storyboard entry. Return ONLY a JSON array with one object per line, keys: title, "
-                "visual_description, camera, character, sound_effects, prompt (detailed English text-to-image prompt).\n"
+                "visual_description, camera (one of: zoom_in, zoom_out, pan_left, pan_right, pan_up, pan_down, static), "
+                "character, sound_effects, prompt. The prompt is a detailed English text-to-image prompt that shows what "
+                "the narration is about: subject, setting, action, lighting and mood, with no written words in the picture. "
+                "Describe recurring people or places the same way every time so they look consistent.\n"
                 + listing
             )
             try:
                 items = _parse_json_array(self.complete(prompt))
             except Exception as e:  # keep the user's script even if enrichment fails
                 log.warning("storyboard enrichment failed: %s", e)
+                missed, why = missed + len(part), str(e)[:200]
                 continue
             for s, d in zip(part, _normalise(items, req)):
                 for k in ("title", "visual_description", "camera", "character", "sound_effects", "prompt"):
                     s[k] = d[k]
+        if missed and notes is not None:
+            notes.append(
+                f"{self.label} could not describe the pictures for {missed} of {len(scenes)} scenes ({why}). "
+                "Those scenes use your narration text as the picture description; you can edit it in the storyboard."
+            )
         return scenes
 
 
@@ -249,6 +264,57 @@ class OllamaWriter(_LLMWriter):
         )
         r.raise_for_status()
         return r.json().get("response", "")
+
+
+class GeminiWriter(_LLMWriter):
+    name = "gemini"
+    label = "Google Gemini (free API key, rate-limited)"
+    batch = 20  # fewer, larger requests: the free tier allows only a few requests per minute
+    URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    def available(self) -> bool:
+        return bool(settings.gemini_api_key)
+
+    def complete(self, prompt: str) -> str:
+        last = ""
+        for attempt in range(4):
+            r = httpx.post(
+                self.URL.format(model=settings.gemini_model),
+                headers={"x-goog-api-key": settings.gemini_api_key or ""},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.7, "responseMimeType": "application/json"},
+                },
+                timeout=300,
+            )
+            if r.status_code == 200:
+                parts = (r.json().get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in parts)
+                if not text:
+                    raise WriterError("Gemini returned no text (the request may have been blocked)")
+                return text
+            last = f"Gemini returned {r.status_code}: {r.text[:200]}"
+            if r.status_code in (429, 500, 503) and attempt < 3:
+                time.sleep(_retry_delay(r, default=20 * (attempt + 1)))
+                continue
+            if r.status_code == 429:
+                raise WriterError("Gemini free-tier limit reached; try again in a minute (or tomorrow if the daily limit is used up)")
+            if r.status_code in (400, 401, 403):
+                raise WriterError(f"Gemini rejected the request. Check GEMINI_API_KEY and GEMINI_MODEL. {last}")
+            raise WriterError(last)
+        raise WriterError(last)
+
+
+def _retry_delay(r: httpx.Response, default: float) -> float:
+    """Seconds to wait before retrying, from the API's own hint when it gives one."""
+    try:
+        for d in r.json().get("error", {}).get("details", []):
+            m = re.fullmatch(r"(\d+(?:\.\d+)?)s", str(d.get("retryDelay", "")))
+            if m:
+                return min(90.0, float(m.group(1)) + 1)
+    except Exception:
+        pass
+    return min(90.0, default)
 
 
 class HuggingFaceWriter(_LLMWriter):
@@ -276,7 +342,7 @@ class HuggingFaceWriter(_LLMWriter):
         return r.json()["choices"][0]["message"]["content"]
 
 
-WRITERS = {w.name: w for w in (OllamaWriter(), HuggingFaceWriter(), TemplateWriter())}
+WRITERS = {w.name: w for w in (OllamaWriter(), GeminiWriter(), HuggingFaceWriter(), TemplateWriter())}
 
 
 def pick_writer() -> object:
@@ -285,7 +351,7 @@ def pick_writer() -> object:
         w = WRITERS.get(choice)
         if w and w.available():
             return w
-    for name in ("ollama", "huggingface"):
+    for name in ("ollama", "gemini", "huggingface"):
         if WRITERS[name].available():
             return WRITERS[name]
     return WRITERS["template"]

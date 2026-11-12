@@ -2,6 +2,9 @@
 
 * ComfyUIProvider     - your own GPU via ComfyUI (SDXL / Flux stills, Stable Video Diffusion clips).
 * HuggingFaceImage    - Hugging Face Inference text-to-image (free tier, rate-limited, needs HF_TOKEN).
+* PollinationsImage   - pollinations.ai text-to-image. Free, no account or key. Anonymous use is
+                        limited to about one picture every 15 seconds, so requests are paced.
+                        The scene's picture prompt is sent to that third-party service.
 * UploadedImage       - the user's own photo (Image-to-Video).
 * TitleCardRenderer   - CPU, no AI. Draws a styled illustrated card with the scene text.
                         It is a real rendered image, clearly labelled as non-AI.
@@ -9,6 +12,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import math
@@ -16,11 +20,13 @@ import random
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from ..config import settings
+from ..util import file_lock
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +67,8 @@ def _lerp(a, b, t):
 class TitleCardRenderer:
     name = "titlecard"
     label = "Title-card renderer (CPU, non-AI)"
+    short = "Text cards (no AI)"
+    note = ""
     is_ai = False
 
     def available(self) -> bool:
@@ -125,6 +133,8 @@ class TitleCardRenderer:
 class HuggingFaceImage:
     name = "huggingface"
     label = "Hugging Face text-to-image (free tier, rate-limited)"
+    short = "AI pictures (Hugging Face)"
+    note = "Picture descriptions are sent to Hugging Face. Its free allowance is small and rate-limited."
     is_ai = True
 
     def available(self) -> bool:
@@ -146,6 +156,99 @@ class HuggingFaceImage:
         return out
 
 
+class PollinationsImage:
+    """Free AI pictures from pollinations.ai (no account, no key).
+
+    Anonymous requests are rate-limited by the service, so every worker process
+    shares one gate (a lock file plus a small state file) that spaces requests
+    out. After repeated failures the provider pauses itself for a while so a
+    long render does not stall; affected scenes fall back to title cards and are
+    labelled as such.
+    """
+
+    name = "pollinations"
+    label = "Pollinations AI pictures (free online service, no account, about 1 picture per 15 s)"
+    short = "AI pictures (Pollinations, free)"
+    note = ("Picture descriptions are sent to pollinations.ai, a free online service. It allows about four pictures "
+            "a minute, so long videos take a while. If it is unavailable, a scene falls back to a text card and says so.")
+    is_ai = True
+    URL = "https://image.pollinations.ai/prompt/"
+    ATTEMPTS = 3
+    PAUSE_AFTER_FAILURES = 3
+    PAUSE_SECONDS = 600
+
+    def available(self) -> bool:
+        return settings.pollinations_enabled
+
+    # ---- shared state (all worker processes) ----
+    def _state_path(self) -> Path:
+        return settings.storage_dir / ".locks" / "pollinations.json"
+
+    def _load(self) -> dict:
+        try:
+            return json.loads(self._state_path().read_text())
+        except Exception:
+            return {}
+
+    def _save(self, state: dict) -> None:
+        self._state_path().write_text(json.dumps(state))
+
+    def paused_for(self) -> float:
+        """Seconds left of the pause that follows repeated failures (0 when not paused)."""
+        return max(0.0, float(self._load().get("paused_until", 0)) - time.time())
+
+    def image(self, prompt: str, style: str, width: int, height: int, out: Path, caption: str = "", seed: int = 0) -> Path:
+        left = self.paused_for()
+        if left > 0:
+            raise VisualError(f"Pollinations is paused for {left / 60:.0f} more min after repeated failures")
+        scale = min(1.0, 1280 / max(width, height))
+        w, h = max(256, int(width * scale) // 8 * 8), max(256, int(height * scale) // 8 * 8)
+        text = " ".join((prompt or caption or "abstract background").split())[:900]
+        params = {"width": w, "height": h, "seed": seed or random.randint(1, 2**31 - 1),
+                  "model": settings.pollinations_model, "nologo": "true", "private": "true"}
+        last_error, rejected = "no attempt made", False
+        with file_lock("pollinations"):  # one request at a time, across workers
+            for attempt in range(1, self.ATTEMPTS + 1):
+                state = self._load()
+                if float(state.get("paused_until", 0)) > time.time():
+                    raise VisualError("Pollinations is paused after repeated failures")
+                wait = float(state.get("last_request", 0)) + settings.pollinations_interval * attempt - time.time()
+                if wait > 0:
+                    time.sleep(min(wait, 120))
+                state["last_request"] = time.time()
+                self._save(state)
+                try:
+                    r = httpx.get(self.URL + quote(text, safe=""), params=params, follow_redirects=True,
+                                  timeout=httpx.Timeout(90, connect=15))
+                    if r.status_code == 200:
+                        img = Image.open(io.BytesIO(r.content))
+                        img.load()
+                        if min(img.size) < 128:
+                            raise VisualError(f"unexpectedly small picture {img.size}")
+                        out.parent.mkdir(parents=True, exist_ok=True)
+                        img.convert("RGB").save(out, "PNG")
+                        state["failures"] = 0
+                        self._save(state)
+                        return out
+                    last_error = f"HTTP {r.status_code}: {r.text[:120]}"
+                    if r.status_code not in (408, 425, 429) and r.status_code < 500:
+                        rejected = True  # this prompt was refused; retrying will not help
+                        break
+                except VisualError as e:
+                    last_error = str(e)
+                except Exception as e:  # network trouble or an unreadable picture
+                    last_error = f"{type(e).__name__}: {e}"
+                log.warning("pollinations attempt %d/%d failed: %s", attempt, self.ATTEMPTS, last_error)
+            state = self._load()
+            state["failures"] = int(state.get("failures", 0)) + (0 if rejected else 1)
+            if state["failures"] >= self.PAUSE_AFTER_FAILURES:
+                state["paused_until"] = time.time() + self.PAUSE_SECONDS
+                state["failures"] = 0
+                log.warning("pollinations paused for %d s after repeated failures", self.PAUSE_SECONDS)
+            self._save(state)
+        raise VisualError(f"Pollinations did not return a picture ({last_error})")
+
+
 def _fill(node, values: dict):
     if isinstance(node, dict):
         return {k: _fill(v, values) for k, v in node.items()}
@@ -165,6 +268,8 @@ class ComfyUIProvider:
 
     name = "comfyui"
     label = "ComfyUI on your GPU (SDXL / Stable Video Diffusion)"
+    short = "ComfyUI on your GPU"
+    note = ""
     is_ai = True
 
     def available(self) -> bool:
@@ -249,13 +354,30 @@ class ComfyUIProvider:
 
 
 TITLECARD = TitleCardRenderer()
-PROVIDERS = {p.name: p for p in (ComfyUIProvider(), HuggingFaceImage(), TITLECARD)}
+PROVIDERS = {p.name: p for p in (ComfyUIProvider(), HuggingFaceImage(), PollinationsImage(), TITLECARD)}
+AUTO_ORDER = ("comfyui", "huggingface", "pollinations")
 
 
 def pick_image_provider(preference: str = "auto"):
     if preference in PROVIDERS and PROVIDERS[preference].available():
         return PROVIDERS[preference]
-    for name in ("comfyui", "huggingface"):
+    for name in AUTO_ORDER:
         if PROVIDERS[name].available():
             return PROVIDERS[name]
     return TITLECARD
+
+
+def fallback_chain(preference: str = "auto") -> list:
+    """Providers to try for one scene, best first, always ending with the title card.
+
+    An explicit choice is respected. With "auto", a failing AI source hands over to
+    the next available one before the title card is used.
+    """
+    first = pick_image_provider(preference)
+    chain = [first]
+    if preference == "auto" and first.name in AUTO_ORDER:
+        later = AUTO_ORDER[AUTO_ORDER.index(first.name) + 1:]
+        chain += [PROVIDERS[n] for n in later if PROVIDERS[n].available()]
+    if TITLECARD not in chain:
+        chain.append(TITLECARD)
+    return chain

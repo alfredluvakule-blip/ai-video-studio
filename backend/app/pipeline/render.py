@@ -12,13 +12,14 @@ import logging
 import re
 import shutil
 import time
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import settings
 from ..models import Asset, Project, Scene
 from ..providers import stt, tts
-from ..providers.visual import ComfyUIProvider, PROVIDERS, TITLECARD, pick_image_provider
+from ..providers.visual import ComfyUIProvider, PROVIDERS, fallback_chain
 from . import ffmpeg as ff
 from . import music
 
@@ -125,16 +126,21 @@ def render_scene(scene: Scene, project: Project, source_asset: Asset | None, voi
             still = Path(source_asset.path)
             provider = "upload:image"
         else:
-            prov = pick_image_provider(project.visual_provider)
-            try:
-                still = prov.image(scene.prompt or scene.visual_description, project.style, int(w * 1.25), int(h * 1.25), still,
-                                   caption=scene.title or scene.visual_description, seed=abs(hash(scene.id)) % 2**31)
-                provider = prov.name
-            except Exception as e:  # fall back to the CPU renderer, and say so
-                log.warning("visual provider %s failed: %s", prov.name, e)
-                still = TITLECARD.image(scene.prompt, project.style, int(w * 1.25), int(h * 1.25), d / "still.png",
-                                        caption=scene.title or scene.visual_description)
-                provider = f"titlecard (fallback: {prov.name} failed)"
+            # A new seed per render attempt, so "Regenerate" gives a different picture.
+            seed = zlib.crc32(f"{scene.id}:{scene.attempts}".encode()) % 2**31 or 1
+            failed: list[str] = []
+            for prov in fallback_chain(project.visual_provider):
+                try:
+                    still = prov.image(scene.prompt or scene.visual_description, project.style, int(w * 1.25), int(h * 1.25),
+                                       d / "still.png", caption=scene.title or scene.visual_description, seed=seed)
+                except Exception as e:  # try the next source, and say so on the scene
+                    log.warning("visual provider %s failed: %s", prov.name, e)
+                    failed.append(prov.name)
+                    continue
+                provider = prov.name + (f" (fallback: {', '.join(failed)} failed)" if failed else "")
+                break
+            else:
+                raise RuntimeError(f"no picture source worked ({', '.join(failed)})")
         scene.image_path = str(still)
 
         comfy: ComfyUIProvider = PROVIDERS["comfyui"]  # type: ignore[assignment]

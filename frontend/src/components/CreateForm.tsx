@@ -144,6 +144,13 @@ export default function CreateForm({ mode }: { mode: Mode }) {
                 labels={Object.fromEntries(music.map((m) => [`asset:${m.id}`, `Your track: ${m.filename}`]))} />
             </Field>
           </div>
+          {mode !== "image" && meta?.visual_providers && (
+            <Field label="Pictures" hint={meta.visual_providers.find((v) => v.name === f.visual_provider)?.note || undefined}>
+              <Select value={f.visual_provider} onChange={(v) => set("visual_provider", v)}
+                options={meta.visual_providers.map((v) => v.name)}
+                labels={Object.fromEntries(meta.visual_providers.map((v) => [v.name, v.label]))} />
+            </Field>
+          )}
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={f.burn_subtitles} onChange={(e) => set("burn_subtitles", e.target.checked)} />
             Burn subtitles into the video (an .srt file is always exported too)

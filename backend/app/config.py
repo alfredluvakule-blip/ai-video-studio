@@ -49,16 +49,23 @@ class Settings:
     self_hosted: bool = _bool("SELF_HOSTED", False)
 
     # ---- Providers ----
-    llm_provider: str = os.getenv("LLM_PROVIDER", "auto")  # auto|ollama|huggingface|template
+    llm_provider: str = os.getenv("LLM_PROVIDER", "auto")  # auto|ollama|gemini|huggingface|template
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+    # Free Google AI Studio key: Gemini writes storyboards (free tier, rate-limited).
+    gemini_api_key: str | None = _opt("GEMINI_API_KEY")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    # Pollinations: free AI images with no account (about one image per 15 seconds).
+    pollinations_enabled: bool = _bool("POLLINATIONS", True)
+    pollinations_model: str = os.getenv("POLLINATIONS_MODEL", "flux")
+    pollinations_interval: float = float(os.getenv("POLLINATIONS_INTERVAL", "16"))
     hf_token: str | None = _opt("HF_TOKEN")
     hf_llm_model: str = os.getenv("HF_LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
     hf_image_model: str = os.getenv("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
     comfyui_url: str | None = _opt("COMFYUI_URL")
     comfyui_image_workflow: str | None = _opt("COMFYUI_IMAGE_WORKFLOW")
     comfyui_video_workflow: str | None = _opt("COMFYUI_VIDEO_WORKFLOW")
-    piper_bin: str = os.getenv("PIPER_BIN", "piper")
+    piper_auto_download: bool = _bool("PIPER_AUTO_DOWNLOAD", True)
     piper_voices_dir: Path = Path(os.getenv("PIPER_VOICES_DIR", "./voices")).resolve()
     whisper_model: str = os.getenv("WHISPER_MODEL", "base")
 

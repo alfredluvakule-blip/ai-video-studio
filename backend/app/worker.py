@@ -46,3 +46,10 @@ def _on_ready(**_):
 
     n = recover()
     logging.getLogger(__name__).info("recovery re-queued %d task(s)", n)
+    # Fetch the default English narrator voices in the background, so the first
+    # render does not have to wait for a download.
+    import threading
+
+    from .providers import tts
+
+    threading.Thread(target=tts.preload, daemon=True, name="voice-preload").start()

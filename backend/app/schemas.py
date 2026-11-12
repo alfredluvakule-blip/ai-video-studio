@@ -39,7 +39,7 @@ class ProjectIn(BaseModel):
     music: str = "ambient"
     burn_subtitles: bool = False
     compression: Literal["high", "balanced", "small"] = "balanced"
-    visual_provider: Literal["auto", "titlecard", "huggingface", "comfyui"] = "auto"
+    visual_provider: Literal["auto", "titlecard", "pollinations", "huggingface", "comfyui"] = "auto"
     asset_ids: list[str] = []
 
 
@@ -59,7 +59,7 @@ class ProjectPatch(BaseModel):
     music: str | None = None
     burn_subtitles: bool | None = None
     compression: Literal["high", "balanced", "small"] | None = None
-    visual_provider: Literal["auto", "titlecard", "huggingface", "comfyui"] | None = None
+    visual_provider: Literal["auto", "titlecard", "pollinations", "huggingface", "comfyui"] | None = None
 
 
 class SceneIn(BaseModel):
