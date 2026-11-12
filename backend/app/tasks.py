@@ -183,10 +183,35 @@ def assemble(project_id: str, job_id: str | None = None) -> None:
     with session_scope() as db:
         pp = db.get(Project, project_id)
         pp.status, pp.error = "done", None
+        pp.notes = _with_voice_notes(pp.notes or [], scenes, pp.voice)
         pp.output_path, pp.audio_path, pp.srt_path = str(out["video"]), str(out["audio"]), str(out["srt"])
         pp.output_seconds = out["seconds"]
         db.add(RenderLog(user_id=pp.user_id, project_id=pp.id, kind="export", output_seconds=out["seconds"], wall_seconds=wall))
         _job(db, job_id, status="done", message=f"Video ready ({out['seconds'] / 60:.1f} min)")
+
+
+def _with_voice_notes(notes: list[str], scenes, gender: str) -> list[str]:
+    """Add credit lines and gender notes for the narrator voices a finished video used."""
+    import re
+
+    from .providers import tts
+
+    out = [n for n in notes if not n.startswith("Narrator voice:")]
+    voices = sorted({m.group(1) for s in scenes for m in [re.search(r"voice:piper \(([^)]+)\)", s.provider_used or "")] if m})
+    for v in voices:
+        info = tts.VOICE_INFO.get(v, {})
+        line = f"Narrator voice: {v}"
+        if info.get("gender") and info["gender"] != gender:
+            line += f" ({info['gender']}; no {gender} natural voice is available for this language yet)"
+        if info.get("credit"):
+            line += f". {info['credit']}"
+        out.append(line)
+    if any("voice:espeak" in (s.provider_used or "") or "voice:flite" in (s.provider_used or "") for s in scenes) and voices:
+        out.append("Narrator voice: some scenes used the basic eSpeak voice because the natural voice was not available.")
+    elif any("voice:espeak" in (s.provider_used or "") for s in scenes):
+        out.append("Narrator voice: the basic eSpeak voice was used because no natural voice was available. "
+                   "Check Settings to see why.")
+    return out
 
 
 def recover(starting_up: bool = True) -> int:

@@ -32,6 +32,7 @@ export type Meta = {
   styles: string[]; aspects: string[]; resolutions: number[]; fps: number[];
   languages: Record<string, string>; voices: string[]; narration_styles: string[]; music: string[];
   cameras: string[]; transitions: string[];
+  visual_providers: { name: string; label: string; note: string; is_ai: boolean }[];
   limits: { max_project_minutes: number; storage_quota_mb: number; daily_render_minutes: number | null; max_upload_mb: number; self_hosted: boolean; paid_services: string };
 };
 

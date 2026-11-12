@@ -66,8 +66,17 @@ def meta():
         "music": ["none", *music.MOODS],
         "cameras": ["zoom_in", "zoom_out", "pan_left", "pan_right", "pan_up", "pan_down", "static"],
         "transitions": ["fade", "cut"],
+        "visual_providers": visual_choices(),
         "limits": limits(),
     }
+
+
+def visual_choices() -> list[dict]:
+    """Picture sources a project can choose from on this server."""
+    auto = pick_image_provider()
+    out = [{"name": "auto", "label": f"Automatic: {auto.short}", "note": auto.note, "is_ai": auto.is_ai}]
+    out += [{"name": v.name, "label": v.short, "note": v.note, "is_ai": v.is_ai} for v in PROVIDERS.values() if v.available()]
+    return out
 
 
 def limits() -> dict:
@@ -77,7 +86,7 @@ def limits() -> dict:
         "daily_render_minutes": (settings.daily_render_seconds / 60) if settings.daily_render_seconds and not settings.self_hosted else None,
         "max_upload_mb": settings.max_upload_mb,
         "self_hosted": settings.self_hosted,
-        "paid_services": "This server never charges you. Optional third-party keys you add (e.g. Hugging Face) are governed by that provider's own free-tier limits.",
+        "paid_services": "This server never charges you and uses no paid service. Free online services it can use (Pollinations pictures, and Gemini or Hugging Face if you add your own key) are governed by that provider's own free-tier limits.",
     }
 
 
@@ -89,20 +98,21 @@ def providers():
     return {
         "writers": [{"name": w.name, "label": w.label, "available": w.available(), "active": w.name == writer.name} for w in WRITERS.values()],
         "visuals": [
-            {"name": v.name, "label": v.label, "available": v.available(), "is_ai": v.is_ai, "active": v.name == image.name}
+            {"name": v.name, "label": v.label, "available": v.available(), "is_ai": v.is_ai, "active": v.name == image.name, "note": v.note}
             for v in PROVIDERS.values()
         ],
         "video_model": {
             "name": "svd",
             "label": "Stable Video Diffusion via ComfyUI",
             "available": comfy.video_available(),
-            "note": "Needs a GPU running ComfyUI with COMFYUI_URL and COMFYUI_VIDEO_WORKFLOW set. Without it, scenes are animated with camera motion (Ken Burns).",
+            "note": "Needs a GPU running ComfyUI with COMFYUI_URL and COMFYUI_VIDEO_WORKFLOW set. Without it, each scene is a still picture animated with camera motion (Ken Burns), not a generated video clip.",
         },
         "tts": tts.status(),
         "whisper": {"available": stt.available(), "model": settings.whisper_model},
         "ffmpeg": ff.available(),
         "queue": queue.health(),
         "planned": [
+            "Optional paid AI video clips (text-to-video models), with the cost shown before anything renders",
             "AI sound-effect generation (AudioLDM / Stable Audio Open via ComfyUI)",
             "Multi-track overlays (image/text overlays on extra video tracks)",
             "Supabase Storage backend for media",

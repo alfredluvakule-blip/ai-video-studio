@@ -19,7 +19,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://postgres:studio@db/studio
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data
-    volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices:ro]
+      PIPER_VOICES_DIR: /voices
+    # ./voices is writable: narrator voices are downloaded into it once and kept across rebuilds
+    volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices]
     ports: ["8000:8000"]
     restart: unless-stopped
     depends_on:
@@ -34,7 +36,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://postgres:studio@db/studio
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data
-    volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices:ro]
+      PIPER_VOICES_DIR: /voices
+    # ./voices is writable: narrator voices are downloaded into it once and kept across rebuilds
+    volumes: [media:/data, ./comfyui:/workflows:ro, ./voices:/voices]
     restart: unless-stopped
     depends_on:
       db: {condition: service_healthy}

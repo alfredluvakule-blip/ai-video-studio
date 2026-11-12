@@ -4,9 +4,12 @@ import { API_URL, Usage, api } from "@/lib/api";
 
 type Prov = {
   writers: { name: string; label: string; available: boolean; active: boolean }[];
-  visuals: { name: string; label: string; available: boolean; is_ai: boolean; active: boolean }[];
+  visuals: { name: string; label: string; available: boolean; is_ai: boolean; active: boolean; note?: string }[];
   video_model: { label: string; available: boolean; note: string };
-  tts: { name: string; label: string; available: boolean; languages: string[] }[];
+  tts: {
+    name: string; label: string; available: boolean; languages: string[]; note?: string; installed_voices?: string[];
+    voices?: { language: string; gender: string; voice: string; licence: string }[];
+  }[];
   whisper: { available: boolean; model: string };
   ffmpeg: boolean; queue: { backend: string; ok: boolean; error?: string }; planned: string[];
 };
@@ -40,7 +43,10 @@ export default function Settings() {
           <section className="card space-y-3">
             <h2 className="font-semibold text-white">Visual generation</h2>
             {p.visuals.map((v) => (
-              <div key={v.name} className="flex items-center gap-2 text-sm"><Dot ok={v.available} />{v.label}{v.active && <span className="badge bg-violet-500/20 text-violet-200">in use</span>}{!v.is_ai && <span className="badge bg-white/5 text-slate-400">not AI</span>}</div>
+              <div key={v.name}>
+                <div className="flex items-center gap-2 text-sm"><Dot ok={v.available} />{v.label}{v.active && <span className="badge bg-violet-500/20 text-violet-200">in use</span>}{!v.is_ai && <span className="badge bg-white/5 text-slate-400">not AI</span>}</div>
+                {v.note && v.available && <p className="ml-4 text-xs text-slate-500">{v.note}</p>}
+              </div>
             ))}
             <div className="flex items-center gap-2 text-sm"><Dot ok={p.video_model.available} />{p.video_model.label}</div>
             <p className="text-xs text-slate-500">{p.video_model.note}</p>
@@ -51,7 +57,17 @@ export default function Settings() {
           </section>
           <section className="card space-y-3">
             <h2 className="font-semibold text-white">Voice (all local and free)</h2>
-            {p.tts.map((t) => <div key={t.name} className="flex items-center gap-2 text-sm"><Dot ok={t.available} />{t.label}{t.available && <span className="text-xs text-slate-500">({t.languages.join(", ")})</span>}</div>)}
+            {p.tts.map((t) => (
+              <div key={t.name}>
+                <div className="flex items-center gap-2 text-sm"><Dot ok={t.available} />{t.label}{t.available && <span className="text-xs text-slate-500">({t.languages.join(", ")})</span>}</div>
+                {t.available && t.note && <p className="ml-4 text-xs text-slate-500">{t.note}{t.installed_voices?.length ? ` Downloaded: ${t.installed_voices.join(", ")}.` : ""}</p>}
+                {t.available && t.voices && (
+                  <ul className="ml-4 mt-1 space-y-0.5 text-xs text-slate-500">
+                    {t.voices.map((v) => <li key={`${v.language}-${v.gender}`}>{v.language} {v.gender}: {v.voice} · licence: {v.licence}</li>)}
+                  </ul>
+                )}
+              </div>
+            ))}
             <div className="flex items-center gap-2 text-sm"><Dot ok={p.whisper.available} />Whisper subtitles for uploaded recordings ({p.whisper.model})</div>
           </section>
           <section className="card space-y-3">
