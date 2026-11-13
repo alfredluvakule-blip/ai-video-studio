@@ -326,6 +326,35 @@ def test_brain_switches_to_another_writer_when_one_cannot_be_reached(monkeypatch
     assert b.writer is backup and b.switched and plan["brief"]["title"]
 
 
+def _mock_stream(monkeypatch, handler):
+    """Route the Gemini writer's httpx.stream calls to a handler, like a real server would answer."""
+    import contextlib
+
+    import httpx
+
+    from app.providers import llm as pl
+
+    @contextlib.contextmanager
+    def stream(method, url, **kw):
+        kw.pop("timeout", None)
+        with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+            with c.stream(method, url, **kw) as r:
+                yield r
+
+    monkeypatch.setattr(pl.httpx, "stream", stream)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+
+
+def _sse(*texts, thought=None) -> bytes:
+    import json
+
+    out = []
+    if thought:
+        out.append({"candidates": [{"content": {"parts": [{"text": thought, "thought": True}]}}]})
+    out += [{"candidates": [{"content": {"parts": [{"text": t}]}}]} for t in texts]
+    return "".join(f"data: {json.dumps(c)}\r\n\r\n" for c in out).encode()
+
+
 def test_gemini_follows_a_retired_model_to_its_replacement(monkeypatch):
     import httpx
 
@@ -333,17 +362,48 @@ def test_gemini_follows_a_retired_model_to_its_replacement(monkeypatch):
 
     urls = []
 
-    def fake(service, url, **kw):
-        urls.append(url)
-        if "old-flash" in url:
+    def handler(req):
+        urls.append(str(req.url))
+        assert ":streamGenerateContent" in str(req.url) and req.headers["x-goog-api-key"]
+        if "old-flash" in str(req.url):
             return httpx.Response(404, text='{"error":{"code":404,"message":"This model models/old-flash is no longer '
                                             'available to new users. Please update your code to use models/new-flash for the latest"}}')
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "[]"}]}}]})
+        return httpx.Response(200, content=_sse('[{"a"', ': 1}]', thought="thinking..."))
 
-    monkeypatch.setattr(pl, "post_json", fake)
+    _mock_stream(monkeypatch, handler)
     monkeypatch.setattr(pl.settings, "gemini_model", "old-flash")
+    monkeypatch.setattr(pl.settings, "gemini_api_key", "test-key")
     w = pl.GeminiWriter()
-    assert w.complete("hi") == "[]"
+    assert w.complete("hi") == '[{"a": 1}]'  # pieces joined, the model's thoughts left out
     assert "old-flash" in urls[0] and "new-flash" in urls[1]
     w.complete("again")
     assert "new-flash" in urls[2]  # remembered, no second 404
+
+
+def test_gemini_survives_a_dropped_connection(monkeypatch):
+    import httpx
+
+    from app.providers import llm as pl
+
+    calls = []
+
+    def handler(req):
+        calls.append(1)
+        if len(calls) < 3:
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+        return httpx.Response(200, content=_sse("[]"))
+
+    _mock_stream(monkeypatch, handler)
+    monkeypatch.setattr(pl.settings, "gemini_api_key", "test-key")
+    assert pl.GeminiWriter().complete("hi") == "[]" and len(calls) == 3
+
+    calls.clear()
+
+    def always_down(req):
+        calls.append(1)
+        raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+
+    _mock_stream(monkeypatch, always_down)
+    with pytest.raises(pl.NetworkError) as e:
+        pl.GeminiWriter().complete("hi")
+    assert len(calls) == pl.GeminiWriter.NET_ATTEMPTS and "not a problem with your key" in str(e.value)

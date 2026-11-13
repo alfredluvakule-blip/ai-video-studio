@@ -68,6 +68,19 @@ def test_fallback_chain_ends_with_titlecard(pollinations):
     assert [p.name for p in visual.fallback_chain("titlecard")] == ["titlecard"]
 
 
+def _gemini_server(monkeypatch, handler):
+    import contextlib
+
+    @contextlib.contextmanager
+    def stream(method, url, **kw):
+        kw.pop("timeout", None)
+        with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+            with c.stream(method, url, **kw) as r:
+                yield r
+
+    monkeypatch.setattr(llm.httpx, "stream", stream)
+
+
 def test_gemini_writer(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
     monkeypatch.setattr(settings, "llm_provider", "auto")
@@ -79,11 +92,12 @@ def test_gemini_writer(monkeypatch):
     ])
     sent = {}
 
-    def fake_post(url, headers=None, json=None, **kw):
-        sent["url"], sent["headers"], sent["body"] = url, headers, json
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": scenes_json}]}}]})
+    def handler(req):
+        sent["url"], sent["headers"] = str(req.url), req.headers
+        chunk = json.dumps({"candidates": [{"content": {"parts": [{"text": scenes_json}]}}]})
+        return httpx.Response(200, content=f"data: {chunk}\r\n\r\n".encode())
 
-    monkeypatch.setattr(llm.httpx, "post", fake_post)
+    _gemini_server(monkeypatch, handler)
     assert llm.pick_writer().name == "gemini"
     req = llm.StoryboardRequest(mode="text", prompt="how rain forms", script="", style="educational",
                                 target_seconds=20, scene_seconds=10, language="en", narration_style="neutral")
@@ -103,7 +117,7 @@ def test_gemini_writer(monkeypatch):
 def test_gemini_rate_limit_message(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
     monkeypatch.setattr(llm.time, "sleep", lambda s: None)
-    monkeypatch.setattr(llm.httpx, "post", lambda *a, **k: httpx.Response(429, json={"error": {"details": [{"retryDelay": "3s"}]}}))
+    _gemini_server(monkeypatch, lambda req: httpx.Response(429, json={"error": {"details": [{"retryDelay": "3s"}]}}))
     with pytest.raises(llm.WriterError, match="free-tier limit"):
         llm.WRITERS["gemini"].complete("hi")
 
