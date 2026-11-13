@@ -35,8 +35,11 @@ class _Run:
             bp = db.get(BrainPlan, self.plan_id)
             bp.stage = f"{agent}: {action}"
         calls0 = self.brain.calls if self.brain else 0
+        switched0 = len(self.brain.switched) if self.brain else 0
         try:
             detail = fn()
+            if self.brain and len(self.brain.switched) > switched0:
+                detail = f"{detail} ({'; '.join(self.brain.switched[switched0:])})"
             status, err = "done", None
         except Exception as e:  # recorded, then re-raised for the caller to decide
             log.exception("agent %s failed", agent)

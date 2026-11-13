@@ -54,6 +54,30 @@ class WriterError(RuntimeError):
     pass
 
 
+class NetworkError(WriterError):
+    """The AI service could not be reached (connection refused, cut off or timed out)."""
+
+
+NETWORK_HELP = ("This is a network problem between this computer and {service}, not a problem with your key: "
+                "the connection was cut off. It is often a firewall, antivirus web scanning, a VPN or a weak "
+                "connection. Try again in a minute; if it keeps happening, see the README section "
+                "'AI writer cannot connect'.")
+
+
+def post_json(service: str, url: str, attempts: int = 3, **kw) -> httpx.Response:
+    """POST with retries when the connection itself fails (TLS cut off, reset, timeout)."""
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            return httpx.post(url, **kw)
+        except httpx.TransportError as e:
+            last = e
+            log.warning("%s connection failed (attempt %d/%d): %s", service, i + 1, attempts, e)
+            if i < attempts - 1:
+                time.sleep(3 * (i + 1) ** 2)
+    raise NetworkError(f"Could not connect to {service} ({type(last).__name__}: {last}). " + NETWORK_HELP.format(service=service))
+
+
 def _sentences(text: str) -> list[str]:
     text = re.sub(r"\s+", " ", text.strip())
     if not text:
@@ -278,8 +302,8 @@ class GeminiWriter(_LLMWriter):
     def complete(self, prompt: str) -> str:
         last = ""
         for attempt in range(4):
-            r = httpx.post(
-                self.URL.format(model=settings.gemini_model),
+            r = post_json(
+                "Google Gemini", self.URL.format(model=settings.gemini_model),
                 headers={"x-goog-api-key": settings.gemini_api_key or ""},
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
@@ -325,8 +349,8 @@ class HuggingFaceWriter(_LLMWriter):
         return bool(settings.hf_token)
 
     def complete(self, prompt: str) -> str:
-        r = httpx.post(
-            "https://router.huggingface.co/v1/chat/completions",
+        r = post_json(
+            "Hugging Face", "https://router.huggingface.co/v1/chat/completions",
             headers={"Authorization": f"Bearer {settings.hf_token}"},
             json={
                 "model": settings.hf_llm_model,

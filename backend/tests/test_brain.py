@@ -272,3 +272,55 @@ def test_edit_plan_approve_render_and_memory(client, writer):
     assert client.get(f"/api/director/plans/{d['id']}", headers=other).status_code == 404
     assert client.get(f"/api/projects/{pid}/memory", headers=other).status_code == 404
     assert client.patch(f"/api/memory/{amani['id']}", headers=other, json={"locked": False}).status_code == 404
+
+
+def test_dropped_connection_is_retried_then_explained(monkeypatch):
+    import httpx
+
+    from app.providers import llm as pl
+
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        raise httpx.ConnectError("[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol")
+
+    monkeypatch.setattr(pl.httpx, "post", boom)
+    monkeypatch.setattr(pl.time, "sleep", lambda s: None)
+    with pytest.raises(pl.NetworkError) as e:
+        pl.post_json("Google Gemini", "https://example.invalid", json={})
+    assert len(calls) == 3
+    assert "not a problem with your key" in str(e.value)
+
+    ok = httpx.Response(200, json={"ok": True})
+    seq = iter([httpx.ReadError("cut off"), ok])
+
+    def flaky(*a, **k):
+        x = next(seq)
+        if isinstance(x, Exception):
+            raise x
+        return x
+
+    monkeypatch.setattr(pl.httpx, "post", flaky)
+    assert pl.post_json("Google Gemini", "https://example.invalid").status_code == 200
+
+
+def test_brain_switches_to_another_writer_when_one_cannot_be_reached(monkeypatch):
+    from app.providers.llm import NetworkError
+
+    class Down(FakeWriter):
+        name, label = "down", "Unreachable writer"
+
+        def complete(self, prompt):
+            raise NetworkError("Could not connect")
+
+    backup = FakeWriter()
+    monkeypatch.setattr(llm, "available_llms", lambda: [Down(), backup])
+    monkeypatch.setattr(llm, "pick_llm", lambda: llm.available_llms()[0])
+    b = llm.Brain()
+    # pick_llm builds a fresh Down each call above, so give Brain the list explicitly
+    b.writer, b.backups = Down(), [backup]
+    plan = {"settings": {"idea": "count to three", "target_seconds": 30, "scene_seconds": 10, "language": "en",
+                         "style": "auto", "aspect": "16:9", "voice": "female", "main_character": "", "reference_asset_ids": []}}
+    agents.director(b, plan)
+    assert b.writer is backup and b.switched and plan["brief"]["title"]
