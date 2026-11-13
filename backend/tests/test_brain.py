@@ -324,3 +324,26 @@ def test_brain_switches_to_another_writer_when_one_cannot_be_reached(monkeypatch
                          "style": "auto", "aspect": "16:9", "voice": "female", "main_character": "", "reference_asset_ids": []}}
     agents.director(b, plan)
     assert b.writer is backup and b.switched and plan["brief"]["title"]
+
+
+def test_gemini_follows_a_retired_model_to_its_replacement(monkeypatch):
+    import httpx
+
+    from app.providers import llm as pl
+
+    urls = []
+
+    def fake(service, url, **kw):
+        urls.append(url)
+        if "old-flash" in url:
+            return httpx.Response(404, text='{"error":{"code":404,"message":"This model models/old-flash is no longer '
+                                            'available to new users. Please update your code to use models/new-flash for the latest"}}')
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "[]"}]}}]})
+
+    monkeypatch.setattr(pl, "post_json", fake)
+    monkeypatch.setattr(pl.settings, "gemini_model", "old-flash")
+    w = pl.GeminiWriter()
+    assert w.complete("hi") == "[]"
+    assert "old-flash" in urls[0] and "new-flash" in urls[1]
+    w.complete("again")
+    assert "new-flash" in urls[2]  # remembered, no second 404
