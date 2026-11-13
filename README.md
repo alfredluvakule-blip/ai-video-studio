@@ -56,6 +56,17 @@ Needs an AI writer: a free Gemini key (`GEMINI_API_KEY`) or Ollama. Without one 
 Paid video models (Veo, Kling, Runway, Seedance) are listed as *not connected*; no adapter calls them yet, and
 none will run without showing the price and asking first. `python -m app.selftest` also test-plans a 30-second video.
 
+### AI writer cannot connect
+
+* "Gemini returned 404 ... no longer available" means Google retired that model. The app switches to the model Google
+  names by itself; to make it permanent, set `GEMINI_MODEL` in `.env` (default `gemini-3.8-flash`).
+* `ConnectError`, `SSL: UNEXPECTED_EOF_WHILE_READING`, a read timeout or "Could not connect to Google Gemini" means the
+  connection was cut before Google answered; the key was not even checked. The app retries three times and, if another
+  AI writer is connected, switches to it. If it keeps happening: try again in a minute, try another network (a phone
+  hotspot) to rule out the Wi-Fi or provider, and turn off antivirus web/HTTPS scanning or a VPN for a moment.
+* A free Hugging Face token makes a good backup writer: create one at huggingface.co/settings/tokens ("Read" is
+  enough), put `HF_TOKEN=hf_...` in `.env`, then `docker compose up -d --force-recreate api worker`.
+
 ## What the AI parts need
 
 The pipeline is modular; each stage picks the best available provider and **tells the user which one it used**.
