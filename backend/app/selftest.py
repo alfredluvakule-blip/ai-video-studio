@@ -3,7 +3,8 @@
     docker compose exec worker python -m app.selftest
 
 Speaks a short sentence with the natural narrator voice, fetches one AI picture and,
-when a key is set, asks the AI writer for a two-scene storyboard. Prints what worked,
+when a key is set, asks the AI writer for a two-scene storyboard and the AI Director
+for a 30-second plan. Prints what worked,
 what it fell back to, and why. Writes only into STORAGE_DIR/selftest.
 """
 from __future__ import annotations
@@ -84,6 +85,34 @@ def main() -> int:
                         f"first picture prompt: {scenes[0]['prompt'][:100]}")
         except Exception as e:
             _line(False, f"AI writer: {writer.label} failed: {e}")
+            problems += 1
+
+    # ---- AI Brain (Director Mode)
+    from .brain import agents, prompts
+    from .brain.llm import Brain, BrainUnavailable
+
+    try:
+        brain = Brain()
+    except BrainUnavailable:
+        brain = None
+        _line(None, "AI Director: needs an AI writer (GEMINI_API_KEY); Director Mode stays off until one is added")
+    if brain:
+        t0 = time.time()
+        try:
+            plan = {"settings": {"idea": "a baby teaching children to count from 1 to 3", "target_seconds": 30,
+                                 "scene_seconds": 10, "language": "en", "style": "animation", "aspect": "16:9",
+                                 "voice": "female", "main_character": "", "reference_asset_ids": []}}
+            agents.director(brain, plan)
+            for chapter, scenes in agents.batches(plan):
+                agents.scriptwriter(brain, plan, chapter, scenes)
+                agents.storyboard(brain, plan, chapter, scenes)
+            prompts.build(plan)
+            ok = all(sc["narration"] and sc["action"] for sc in plan["scenes"])
+            _line(ok, f"AI Director: {brain.label} planned \"{plan['brief']['title']}\" with {len(plan['scenes'])} scenes "
+                      f"in {time.time() - t0:.0f} s using {brain.calls} AI calls; scene 1 says: {plan['scenes'][0]['narration'][:80]}")
+            problems += 0 if ok else 1
+        except Exception as e:
+            _line(False, f"AI Director: {brain.label} failed: {e}")
             problems += 1
 
     print("All checks passed." if not problems else f"{problems} problem(s) found; see the lines marked FAIL.")

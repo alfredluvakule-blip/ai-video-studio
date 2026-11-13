@@ -141,3 +141,62 @@ class RenderLog(Base):
     output_seconds: Mapped[float] = mapped_column(Float, default=0)
     wall_seconds: Mapped[float] = mapped_column(Float, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+# ---------------------------------------------------------------- Luvakule AI Brain
+# New tables only: existing projects, scenes and media are untouched, and
+# init_db() (create_all) adds these on start-up without a separate migration step.
+
+class BrainPlan(Base):
+    """A Director Mode production plan: one idea turned into an editable plan
+    (brief, characters, locations, chapters, scenes, prompts, checks, estimate)
+    before anything is generated. Approving it creates a normal project."""
+
+    __tablename__ = "brain_plans"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    idea: Mapped[str] = mapped_column(Text, default="")
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)  # length, language, style, format, references
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="queued")  # queued|planning|ready|failed|approved
+    stage: Mapped[str] = mapped_column(String(200), default="")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class AgentRun(Base):
+    """One real step an agent took. Written while the work happens, never invented."""
+
+    __tablename__ = "agent_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent: Mapped[str] = mapped_column(String(40))
+    action: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running|done|failed|skipped
+    provider: Mapped[str | None] = mapped_column(String(80), nullable=True)  # LLM used, or "rules" for code-only steps
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MemoryItem(Base):
+    """Project memory: characters, locations, visual style and other facts that
+    must stay the same from scene to scene. Locked items are copied word for word
+    into every picture prompt that uses them."""
+
+    __tablename__ = "memory_items"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    project_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # character|location|style|fact
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    locked: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import media, projects, system
+from .api import brain, media, projects, system
 from .config import settings
 from .db import init_db
 
@@ -35,6 +35,7 @@ app.add_middleware(
 app.include_router(system.router)
 app.include_router(projects.router)
 app.include_router(media.router)
+app.include_router(brain.router)
 
 
 @app.get("/health")

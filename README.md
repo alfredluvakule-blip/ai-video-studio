@@ -30,6 +30,32 @@ background (in parallel, resumable after crashes), and stitched with FFmpeg.
 | Free usage | No payments anywhere. Limits (60 min/project, storage quota, daily render minutes on a shared server) are shown in the dashboard; `SELF_HOSTED=true` removes the daily cap |
 | Safety | Auth (PBKDF2 passwords, hashed tokens, optional Supabase JWTs), per-user isolation, upload type/size checks, keyword content screen |
 
+## AI Director (Luvakule AI Brain)
+
+Give one idea ("a six-minute 3D video of my baby teaching numbers 1 to 20"). A team of agents plans the
+whole production and shows it to you **before anything is generated**:
+
+| Agent | What it does | How |
+|---|---|---|
+| Film Director | Works out audience, goal, style, tone, camera language, characters, places, chapters | AI writer |
+| Scriptwriter | Narration and dialogue sized to each scene (English, Kiswahili, ...) | AI writer |
+| Storyboard Artist (with Cinematographer, Animation and Audio cues) | Shot, camera move (dolly, pan, tilt, tracking, crane, aerial), action, expression, lighting, transition, sound | AI writer |
+| Character Director | Fixed look and outfit per character, your reference photos | rules |
+| Prompt Engineer | A picture prompt and a separate video-model prompt per scene, locked looks copied in word for word | rules |
+| Continuity Checker | Durations add up, narration fits, repeated lines, unknown characters/places; sends long narration back to the Scriptwriter once | rules |
+| Audio Director, Video Editor, Video Generation Specialist | Voice and music, transitions and export, the best *connected* way to make scenes, cost and time estimate | rules |
+
+The agents share one structured plan instead of chatting, so a 6-minute plan costs about 7-10 AI writer calls.
+Scene durations always add up exactly to the length you asked for (30 s to 60 min). Every step is written to
+an activity log as it runs; nothing is invented. You can edit everything, "Fit to length", "Fill empty scenes",
+then **Approve**: the plan becomes a normal storyboard project (render, editor and export work as before), and
+characters, places and style are saved as **project memory**. Changing a locked character's outfit there updates
+every scene that shows them.
+
+Needs an AI writer: a free Gemini key (`GEMINI_API_KEY`) or Ollama. Without one the page says so and does nothing.
+Paid video models (Veo, Kling, Runway, Seedance) are listed as *not connected*; no adapter calls them yet, and
+none will run without showing the price and asking first. `python -m app.selftest` also test-plans a 30-second video.
+
 ## What the AI parts need
 
 The pipeline is modular; each stage picks the best available provider and **tells the user which one it used**.

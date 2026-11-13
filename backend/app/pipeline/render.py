@@ -225,7 +225,8 @@ def _chunks(text: str, max_words: int = 8) -> list[str]:
     words = re.sub(r"\s+", " ", text).strip().split(" ")
     out = [words[i : i + max_words] for i in range(0, len(words), max_words)]
     if len(out) > 1 and len(out[-1]) < 3:  # avoid one-word orphan lines
-        out[-2] += out.pop()
+        last = out.pop()  # pop first: "out[-2] += out.pop()" would write to the wrong line
+        out[-1] += last
     return [" ".join(c) for c in out if c]
 
 
