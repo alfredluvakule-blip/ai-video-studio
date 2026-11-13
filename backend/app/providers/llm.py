@@ -299,11 +299,14 @@ class GeminiWriter(_LLMWriter):
     def available(self) -> bool:
         return bool(settings.gemini_api_key)
 
+    model: str | None = None  # set when Google tells us the configured model was retired
+
     def complete(self, prompt: str) -> str:
         last = ""
         for attempt in range(4):
+            model = self.model or settings.gemini_model
             r = post_json(
-                "Google Gemini", self.URL.format(model=settings.gemini_model),
+                "Google Gemini", self.URL.format(model=model),
                 headers={"x-goog-api-key": settings.gemini_api_key or ""},
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
@@ -318,6 +321,16 @@ class GeminiWriter(_LLMWriter):
                     raise WriterError("Gemini returned no text (the request may have been blocked)")
                 return text
             last = f"Gemini returned {r.status_code}: {r.text[:200]}"
+            if r.status_code == 404:
+                # Google retires models and names the replacement, e.g. "Please update your code
+                # to use models/gemini-3.8-flash". Follow that once instead of failing every call.
+                m = re.search(r"use models/([\w.\-]+)", r.text)
+                if m and m.group(1) != model and attempt < 3:
+                    log.warning("Gemini model %s is retired; using %s (set GEMINI_MODEL to keep it)", model, m.group(1))
+                    self.model = m.group(1)
+                    continue
+                raise WriterError(f"Gemini does not offer the model '{model}'. Set GEMINI_MODEL in .env to a current "
+                                  f"model (see https://ai.google.dev/gemini-api/docs/models). {last}")
             if r.status_code in (429, 500, 503) and attempt < 3:
                 time.sleep(_retry_delay(r, default=20 * (attempt + 1)))
                 continue

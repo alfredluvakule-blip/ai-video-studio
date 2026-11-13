@@ -58,7 +58,7 @@ class Settings:
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2")
     # Free Google AI Studio key: Gemini writes storyboards (free tier, rate-limited).
     gemini_api_key: str | None = _opt("GEMINI_API_KEY")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     # Pollinations: free AI images with no account (about one image per 15 seconds).
     pollinations_enabled: bool = _bool("POLLINATIONS", True)
     pollinations_model: str = os.getenv("POLLINATIONS_MODEL", "flux")
