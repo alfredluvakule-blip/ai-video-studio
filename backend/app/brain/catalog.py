@@ -109,7 +109,7 @@ def estimate(plan: dict, render_ratio: float | None) -> dict:
         "cost_usd": 0.0,
         "cost_note": "Free: the recommended route uses no paid service.",
         "ai_writer_calls": int(plan.get("usage", {}).get("llm_calls", 0)),
-        "ai_writer_note": "AI writer calls used to make this plan (free-tier limits of your key apply).",
+        "ai_writer_note": "AI writer calls used to make this plan (free with Gemini, within its limits; paid from your Anthropic credit with Claude).",
         "estimated_minutes": round((picture_wait + render) / 60, 1),
         "time_basis": ("measured render speed on this server" if render_ratio else "a default guess until the first scene renders")
         + (f", plus about {settings.pollinations_interval:.0f} s per AI picture" if picture_wait else ""),

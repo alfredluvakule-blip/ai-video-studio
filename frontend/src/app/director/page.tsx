@@ -129,7 +129,7 @@ export default function DirectorHome() {
             <Field label="Format"><Select value={aspect} onChange={setAspect} options={["16:9", "9:16", "1:1"]} labels={{ "16:9": "16:9 landscape", "9:16": "9:16 portrait", "1:1": "1:1 square" }} /></Field>
           </div>
           <div className="rounded-xl bg-black/30 p-3 text-xs text-slate-400">
-            About {Math.max(1, Math.round(seconds / sceneSeconds))} scenes. Making the plan uses a few free AI writer calls; nothing is drawn, voiced or rendered yet.
+            About {Math.max(1, Math.round(seconds / sceneSeconds))} scenes. Making the plan uses a few AI writer calls{status?.writer.name === "anthropic" ? " (paid, on your Anthropic credit)" : ""}; nothing is drawn, voiced or rendered yet.
           </div>
           <ErrorNote error={error} />
           <button className="btn-primary w-full py-3" disabled={!ready || busy || uploading || idea.trim().length < 3}>{busy ? "Starting…" : "✦ Plan my video"}</button>

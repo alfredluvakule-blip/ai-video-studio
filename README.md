@@ -52,7 +52,7 @@ then **Approve**: the plan becomes a normal storyboard project (render, editor a
 characters, places and style are saved as **project memory**. Changing a locked character's outfit there updates
 every scene that shows them.
 
-Needs an AI writer: a free Gemini key (`GEMINI_API_KEY`) or Ollama. Without one the page says so and does nothing.
+Needs an AI writer: a free Gemini key (`GEMINI_API_KEY`), a paid Claude key (`ANTHROPIC_API_KEY`) or Ollama. Without one the page says so and does nothing.
 Paid video models (Veo, Kling, Runway, Seedance) are listed as *not connected*; no adapter calls them yet, and
 none will run without showing the price and asking first. `python -m app.selftest` also test-plans a 30-second video.
 
@@ -64,6 +64,8 @@ none will run without showing the price and asking first. `python -m app.selftes
   connection was cut before Google answered; the key was not even checked. The app retries three times and, if another
   AI writer is connected, switches to it. If it keeps happening: try again in a minute, try another network (a phone
   hotspot) to rule out the Wi-Fi or provider, and turn off antivirus web/HTTPS scanning or a VPN for a moment.
+* "Claude rejected the API key" or "no credit left": check `ANTHROPIC_API_KEY` and the Billing page at
+  platform.claude.com. "Could not connect to Anthropic Claude" is the same network problem as above.
 * A free Hugging Face token makes a good backup writer: create one at huggingface.co/settings/tokens ("Read" is
   enough), put `HF_TOKEN=hf_...` in `.env`, then `docker compose up -d --force-recreate api worker`.
 
@@ -73,7 +75,7 @@ The pipeline is modular; each stage picks the best available provider and **tell
 
 | Stage | Free/local AI provider | Always-available fallback |
 |---|---|---|
-| Script & storyboard | Ollama (any local LLM), Google Gemini (free key, `GEMINI_API_KEY`) or Hugging Face Inference (free tier, `HF_TOKEN`) | Rule-based splitter: uses your script/prompt as is and **never invents narration** |
+| Script & storyboard | Ollama (any local LLM), Google Gemini (free key, `GEMINI_API_KEY`), Anthropic Claude (paid key, `ANTHROPIC_API_KEY`) or Hugging Face Inference (free tier, `HF_TOKEN`) | Rule-based splitter: uses your script/prompt as is and **never invents narration** |
 | Scene images | ComfyUI on your GPU (SDXL workflow included), Hugging Face text-to-image, or **Pollinations** (free, no account, on by default) | Title-card renderer (CPU, clearly marked "not AI") |
 | Scene motion | Stable Video Diffusion through ComfyUI (workflow included, needs [VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite)) | Ken Burns camera motion with FFmpeg |
 | Voice | Piper neural voices (local, downloaded once) | eSpeak NG / Flite |
@@ -85,8 +87,8 @@ animated with camera moves, narrated by a natural Piper voice, with music and su
 or a paid video model (planned, with the cost shown first). If Pollinations is down or rate-limits,
 scenes fall back to title cards and each scene says which source it used.
 
-Privacy: Piper voices run on your machine. Pollinations and Gemini are online services, so scene picture
-descriptions (and, for Gemini, your script) are sent to them. Set `POLLINATIONS=false` and leave
+Privacy: Piper voices run on your machine. Pollinations, Gemini and Claude are online services, so scene picture
+descriptions (and, for Gemini and Claude, your script) are sent to them. Set `POLLINATIONS=false` and leave
 `GEMINI_API_KEY` empty to keep everything local.
 
 ## Run it
@@ -115,6 +117,12 @@ For quick local hacking, `QUEUE_BACKEND=inline` runs jobs inside the API process
 * **Gemini** (free key): create a key at [Google AI Studio](https://aistudio.google.com/apikey) and set
   `GEMINI_API_KEY`. Gemini then writes storyboards from a short prompt and, for your own script, writes a
   picture description for every scene (your narration stays word for word). Free tier, rate-limited.
+* **Claude** (paid per use): create a key at [platform.claude.com](https://platform.claude.com) ("API keys"), add
+  prepaid credit under Billing, and set `ANTHROPIC_API_KEY`. This is billed by Anthropic separately from a Claude.ai
+  Pro/Max subscription. When the key is set, `auto` uses Claude first and keeps Gemini as the backup; set
+  `LLM_PROVIDER=gemini` to keep the free one first. `ANTHROPIC_MODEL` picks the model (default `claude-opus-5-5`;
+  `claude-sonnet-5-5` costs about half, `claude-haiku-5-5` much less) and `ANTHROPIC_EFFORT` (`low`, `medium`,
+  `high`) how hard it thinks.
 * **Pollinations** (free, no account): on by default (`POLLINATIONS=true`); about one picture per 15 seconds.
 * **Hugging Face** (free tier): create a token at huggingface.co, set `HF_TOKEN`.
 * **ComfyUI** (your GPU): run ComfyUI, put `sd_xl_base_1.0.safetensors` and `svd_xt.safetensors` in its models folder,
