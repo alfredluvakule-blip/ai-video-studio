@@ -56,7 +56,7 @@ descriptions (and, for Gemini, your script) are sent to them. Set `POLLINATIONS=
 
 ```bash
 cp .env.example .env          # optional settings
-docker compose up --build     # web on :3000, API on :8000
+docker compose up --build     # app on http://localhost:3000 (the API is also on :8000)
 ```
 
 Without Docker (needs Python 3.11+, Node 20+, FFmpeg, espeak-ng, PostgreSQL, Redis):
@@ -98,6 +98,24 @@ sentence, fetches one AI picture and, with a key, asks the AI writer for a short
 
 The ComfyUI, Hugging Face, Pollinations, Gemini and Piper integrations are written against their public
 APIs and tested with mocked responses; the build sandbox had no GPU and no access to those services.
+
+### Put it online
+
+`http://localhost:3000` is a small front door (Caddy) that serves the app and sends `/api` to the
+backend, so the whole app works from any single web address.
+
+1. **Set an invite code first.** In `.env` put `SIGNUP_CODE=something-only-you-know`. New accounts then
+   need that code; signing in does not. Without it, anyone who finds the link can sign up and render
+   videos on your machine. For a server shared with other people, also set `SELF_HOSTED=false` so the
+   daily render limit (`DAILY_RENDER_SECONDS`) applies.
+2. **Free, from your own computer:** `docker compose --profile online up -d`, then
+   `docker compose logs tunnel` and look for a `https://….trycloudflare.com` link. It works while the
+   computer is on; the link changes each time the tunnel restarts. Stop sharing with
+   `docker compose stop tunnel`.
+3. **Always on, on a server:** copy the project to a Linux server with Docker, point your domain name at
+   it, set `SITE_ADDRESS=yourdomain.com` in `.env`, change the `site` ports to `["80:80", "443:443"]` and
+   remove the `ports` lines of `api`, then `docker compose up -d --build`. Caddy gets the HTTPS
+   certificate by itself.
 
 ## Measured performance (4 vCPU, no GPU, 480p, 3 worker processes)
 

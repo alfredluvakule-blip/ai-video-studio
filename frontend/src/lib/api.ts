@@ -1,4 +1,5 @@
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+// Empty means "same web address as the app" (the Docker setup sends /api to the backend).
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
 export type Scene = {
   id: string; project_id: string; position: number; duration: number; title: string; visual_description: string;
@@ -33,7 +34,7 @@ export type Meta = {
   languages: Record<string, string>; voices: string[]; narration_styles: string[]; music: string[];
   cameras: string[]; transitions: string[];
   visual_providers: { name: string; label: string; note: string; is_ai: boolean }[];
-  limits: { max_project_minutes: number; storage_quota_mb: number; daily_render_minutes: number | null; max_upload_mb: number; self_hosted: boolean; paid_services: string };
+  limits: { max_project_minutes: number; storage_quota_mb: number; daily_render_minutes: number | null; max_upload_mb: number; self_hosted: boolean; paid_services: string; signup_code_required?: boolean };
 };
 
 export type Usage = {

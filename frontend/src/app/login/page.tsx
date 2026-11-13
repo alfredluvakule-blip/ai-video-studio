@@ -1,13 +1,16 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { api, setToken } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { Meta, api, setToken } from "@/lib/api";
 
 export default function Login() {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [invite, setInvite] = useState("");
+  const [needsInvite, setNeedsInvite] = useState(false);
+  useEffect(() => { api<Meta>("/meta").then((m) => setNeedsInvite(!!m.limits.signup_code_required)).catch(() => {}); }, []);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -15,7 +18,7 @@ export default function Login() {
     e.preventDefault();
     setBusy(true); setError("");
     try {
-      const r = await api<{ token: string }>(`/auth/${mode}`, { body: { email, password } });
+      const r = await api<{ token: string }>(`/auth/${mode}`, { body: { email, password, ...(mode === "register" && invite ? { invite_code: invite } : {}) } });
       setToken(r.token);
       router.replace("/");
     } catch (err) {
@@ -41,6 +44,12 @@ export default function Login() {
           <label className="label" htmlFor="pw">Password</label>
           <input id="pw" className="input" type="password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
+        {mode === "register" && needsInvite && (
+          <div>
+            <label className="label" htmlFor="invite">Invite code</label>
+            <input id="invite" className="input" required value={invite} onChange={(e) => setInvite(e.target.value)} />
+          </div>
+        )}
         {error && <p className="text-sm text-red-300">{error}</p>}
         <button className="btn-primary w-full" disabled={busy}>{mode === "login" ? "Sign in" : "Create free account"}</button>
         <button type="button" className="w-full text-center text-sm text-violet-300 hover:underline" onClick={() => setMode(mode === "login" ? "register" : "login")}>

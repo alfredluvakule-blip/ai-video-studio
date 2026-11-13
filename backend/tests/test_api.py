@@ -186,3 +186,16 @@ def test_inline_comment_values_count_as_unset(monkeypatch):
     assert config._opt("COMFYUI_URL") is None
     monkeypatch.setenv("HF_TOKEN", "hf_abc")
     assert config._opt("HF_TOKEN") == "hf_abc"
+
+
+def test_invite_code_controls_signup(client, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "signup_code", "village-2026")
+    assert client.get("/api/meta").json()["limits"]["signup_code_required"] is True
+    creds = {"email": "friend@test.io", "password": "password123"}
+    assert client.post("/api/auth/register", json=creds).status_code == 403
+    assert client.post("/api/auth/register", json={**creds, "invite_code": "wrong"}).status_code == 403
+    r = client.post("/api/auth/register", json={**creds, "invite_code": "village-2026"})
+    assert r.status_code == 200, r.text
+    # signing in never needs the code
+    assert client.post("/api/auth/login", json=creds).status_code == 200

@@ -1,0 +1,14 @@
+# Front door for Luvakule AI: one web address for the app and its API.
+# Locally this is http://localhost:3000. On a server with a domain name, set
+# SITE_ADDRESS=yourdomain.com in .env and Caddy gets an HTTPS certificate itself.
+{$SITE_ADDRESS::3000} {
+	request_body {
+		max_size 1GB
+	}
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

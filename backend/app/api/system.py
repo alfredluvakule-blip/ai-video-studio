@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -23,6 +25,8 @@ router = APIRouter(prefix="/api")
 
 @router.post("/auth/register")
 def register(body: Credentials, db: Session = Depends(get_db)):
+    if settings.signup_code and not hmac.compare_digest((body.invite_code or "").strip().encode(), settings.signup_code.encode()):
+        raise HTTPException(403, "An invite code is needed to create an account here. Ask the owner of this site for one.")
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(409, "An account with this email already exists")
     user = User(email=body.email, password_hash=auth.hash_password(body.password))
@@ -86,6 +90,7 @@ def limits() -> dict:
         "daily_render_minutes": (settings.daily_render_seconds / 60) if settings.daily_render_seconds and not settings.self_hosted else None,
         "max_upload_mb": settings.max_upload_mb,
         "self_hosted": settings.self_hosted,
+        "signup_code_required": bool(settings.signup_code),
         "paid_services": "This server never charges you and uses no paid service. Free online services it can use (Pollinations pictures, and Gemini or Hugging Face if you add your own key) are governed by that provider's own free-tier limits.",
     }
 
