@@ -7,10 +7,14 @@ so instead of pretending.
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from ..config import settings
-from ..providers.llm import WRITERS, WriterError
+from ..providers.llm import WRITERS, NetworkError, WriterError
+
+
+log = logging.getLogger(__name__)
 
 
 class BrainUnavailable(RuntimeError):
@@ -24,15 +28,19 @@ NO_LLM_HELP = (
 )
 
 
+def available_llms() -> list:
+    """Connected AI writers, best first. LLM_PROVIDER, when it names one, goes first."""
+    order = ["gemini", "ollama", "huggingface"]
+    if settings.llm_provider in order:
+        order.remove(settings.llm_provider)
+        order.insert(0, settings.llm_provider)
+    return [WRITERS[n] for n in order if WRITERS[n].available()]
+
+
 def pick_llm():
-    """The connected AI writer, or None. Honors LLM_PROVIDER when it names an AI writer."""
-    choice = settings.llm_provider
-    if choice in WRITERS and choice != "template" and WRITERS[choice].available():
-        return WRITERS[choice]
-    for name in ("gemini", "ollama", "huggingface"):
-        if WRITERS[name].available():
-            return WRITERS[name]
-    return None
+    """The connected AI writer, or None."""
+    ws = available_llms()
+    return ws[0] if ws else None
 
 
 def status() -> dict:
@@ -66,7 +74,22 @@ class Brain:
         self.writer = writer or pick_llm()
         if not self.writer:
             raise BrainUnavailable(NO_LLM_HELP)
+        # other connected writers to switch to if this one cannot be reached
+        self.backups = [w for w in available_llms() if w is not self.writer] if writer is None else []
         self.calls = 0
+        self.switched: list[str] = []
+
+    def _complete(self, prompt: str) -> str:
+        while True:
+            try:
+                return self.writer.complete(prompt)
+            except NetworkError as e:
+                if not self.backups:
+                    raise
+                old, self.writer = self.writer, self.backups.pop(0)
+                self.switched.append(f"{old.label} could not be reached, switched to {self.writer.label}")
+                log.warning("%s; switching AI writer: %s", e, self.writer.label)
+                self.calls += 1
 
     @property
     def label(self) -> str:
@@ -81,7 +104,7 @@ class Brain:
         last: Exception | None = None
         for i in range(attempts):
             self.calls += 1
-            text = self.writer.complete(prompt if i == 0 else prompt + "\n\nYour last reply was not valid JSON. Reply with JSON only.")
+            text = self._complete(prompt if i == 0 else prompt + "\n\nYour last reply was not valid JSON. Reply with JSON only.")
             try:
                 data = parse_json(text)
             except WriterError as e:
