@@ -294,7 +294,44 @@ class GeminiWriter(_LLMWriter):
     name = "gemini"
     label = "Google Gemini (free API key, rate-limited)"
     batch = 20  # fewer, larger requests: the free tier allows only a few requests per minute
-    URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
+    NET_ATTEMPTS = 4
+
+    def _stream(self, model: str, prompt: str) -> tuple[httpx.Response, str]:
+        """Call Gemini with streaming. Google sends the answer piece by piece, so the connection
+        is not left silent while the model thinks; some networks drop silent connections
+        ("Server disconnected without sending a response"). Connection failures are retried."""
+        body = {"contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.7, "responseMimeType": "application/json"}}
+        last: Exception | None = None
+        for i in range(self.NET_ATTEMPTS):
+            try:
+                with httpx.stream("POST", self.URL.format(model=model), json=body,
+                                  headers={"x-goog-api-key": settings.gemini_api_key or ""},
+                                  timeout=httpx.Timeout(600, connect=30)) as r:
+                    if r.status_code != 200:
+                        r.read()
+                        return r, ""
+                    pieces = []
+                    for line in r.iter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        try:
+                            chunk = json.loads(line[5:].strip())
+                        except ValueError:
+                            continue
+                        for c in chunk.get("candidates") or []:
+                            for part in (c.get("content") or {}).get("parts") or []:
+                                if not part.get("thought"):
+                                    pieces.append(part.get("text", ""))
+                    return r, "".join(pieces)
+            except httpx.TransportError as e:
+                last = e
+                log.warning("Google Gemini connection failed (attempt %d/%d): %s", i + 1, self.NET_ATTEMPTS, e)
+                if i < self.NET_ATTEMPTS - 1:
+                    time.sleep(5 * (i + 1) ** 2)
+        raise NetworkError(f"Could not connect to Google Gemini ({type(last).__name__}: {last}). "
+                           + NETWORK_HELP.format(service="Google Gemini"))
 
     def available(self) -> bool:
         return bool(settings.gemini_api_key)
@@ -305,18 +342,8 @@ class GeminiWriter(_LLMWriter):
         last = ""
         for attempt in range(4):
             model = self.model or settings.gemini_model
-            r = post_json(
-                "Google Gemini", self.URL.format(model=model),
-                headers={"x-goog-api-key": settings.gemini_api_key or ""},
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.7, "responseMimeType": "application/json"},
-                },
-                timeout=300,
-            )
+            r, text = self._stream(model, prompt)
             if r.status_code == 200:
-                parts = (r.json().get("candidates") or [{}])[0].get("content", {}).get("parts", [])
-                text = "".join(p.get("text", "") for p in parts)
                 if not text:
                     raise WriterError("Gemini returned no text (the request may have been blocked)")
                 return text
