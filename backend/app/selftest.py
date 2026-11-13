@@ -73,7 +73,7 @@ def main() -> int:
     # ---- writer
     writer = pick_writer()
     if writer.name == "template":
-        _line(None, "AI writer: none configured (add GEMINI_API_KEY to .env for AI-written storyboards); "
+        _line(None, "AI writer: none configured (add GEMINI_API_KEY, free, or ANTHROPIC_API_KEY, paid, to .env for AI-written storyboards); "
                     "your own script is still used, word for word")
     else:
         t0 = time.time()
@@ -95,7 +95,7 @@ def main() -> int:
         brain = Brain()
     except BrainUnavailable:
         brain = None
-        _line(None, "AI Director: needs an AI writer (GEMINI_API_KEY); Director Mode stays off until one is added")
+        _line(None, "AI Director: needs an AI writer (GEMINI_API_KEY or ANTHROPIC_API_KEY); Director Mode stays off until one is added")
     if brain:
         t0 = time.time()
         try:

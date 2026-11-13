@@ -210,3 +210,115 @@ def test_subtitle_lines_keep_short_endings_without_crashing():
     assert _chunks("one two three four five six seven eight nine ten") == ["one two three four five six seven eight nine ten"]
     words = [f"w{i}" for i in range(18)]
     assert _chunks(" ".join(words)) == [" ".join(words[:8]), " ".join(words[8:])]
+
+
+def _claude_server(monkeypatch, handler, retries=0):
+    """Point the Claude writer at a fake Anthropic API."""
+    import anthropic
+    import httpx2
+
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_provider", "auto")
+    w = llm.WRITERS["anthropic"]
+    monkeypatch.setattr(w, "_client", lambda: anthropic.Anthropic(
+        api_key="test-key", max_retries=retries,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler))))
+    return w
+
+
+def _claude_sse(text, stop="end_turn"):
+    import httpx2
+
+    events = [
+        ("message_start", {"type": "message_start", "message": {
+            "id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "claude-opus-5-5",
+            "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 10, "output_tokens": 1}}}),
+        ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "sig"}}),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        ("content_block_start", {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}),
+        *[("content_block_delta", {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": t}})
+          for t in (text[: len(text) // 2], text[len(text) // 2 :])],
+        ("content_block_stop", {"type": "content_block_stop", "index": 1}),
+        ("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop, "stop_sequence": None}, "usage": {"output_tokens": 20}}),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+    body = "".join(f"event: {e}\ndata: {json.dumps(d)}\n\n" for e, d in events)
+    return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
+
+
+def test_claude_writer(monkeypatch):
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        seen["beta"] = req.headers.get("anthropic-beta", "")
+        seen["key"] = req.headers.get("x-api-key") or req.headers.get("authorization", "")
+        return _claude_sse(json.dumps([{"title": "Rain", "visual_description": "clouds", "camera": "zoom_in",
+                                         "voiceover": "Rain starts as water vapour.", "prompt": "clouds over hills"}]))
+
+    w = _claude_server(monkeypatch, handler)
+    assert w.available() and llm.pick_writer() is w
+    req = llm.StoryboardRequest(mode="text", prompt="how rain forms", script="", style="educational",
+                                target_seconds=10, scene_seconds=10, language="en", narration_style="friendly")
+    scenes, _ = w.storyboard(req)
+    assert scenes[0]["voiceover"] == "Rain starts as water vapour." and scenes[0]["prompt"].startswith("clouds over")
+    b = seen["body"]
+    assert b["model"] == "claude-opus-5-5" and b["stream"] is True and b["fallbacks"] == "default"
+    assert b["output_config"] == {"effort": "medium"} and "temperature" not in b
+    assert "server-side-fallback-2026-07-01" in seen["beta"] and seen["key"].endswith("test-key")
+
+
+def test_claude_cheaper_model_skips_fallbacks(monkeypatch):
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        return _claude_sse("{}")
+
+    w = _claude_server(monkeypatch, handler)
+    monkeypatch.setattr(settings, "anthropic_model", "claude-haiku-5-5")
+    assert w.complete("hi") == "{}"
+    assert seen["body"]["model"] == "claude-haiku-5-5" and "fallbacks" not in seen["body"]
+
+
+def test_claude_errors_are_explained(monkeypatch):
+    import httpx2
+
+    def err(status, msg):
+        return lambda req: httpx2.Response(status, json={"type": "error", "error": {"type": "x", "message": msg}})
+
+    w = _claude_server(monkeypatch, err(401, "invalid x-api-key"))
+    with pytest.raises(llm.WriterError, match="ANTHROPIC_API_KEY"):
+        w.complete("hi")
+    w = _claude_server(monkeypatch, err(400, "Your credit balance is too low"))
+    with pytest.raises(llm.WriterError, match="no credit"):
+        w.complete("hi")
+    w = _claude_server(monkeypatch, err(404, "model: nope"))
+    with pytest.raises(llm.WriterError, match="ANTHROPIC_MODEL"):
+        w.complete("hi")
+    w = _claude_server(monkeypatch, lambda req: _claude_sse("", stop="refusal"))
+    with pytest.raises(llm.WriterError, match="declined"):
+        w.complete("hi")
+
+
+def test_claude_dropped_connection_is_retried_then_network_error(monkeypatch):
+    import httpx2
+
+    calls = []
+
+    def flaky(req):
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx2.RemoteProtocolError("Server disconnected without sending a response.")
+        return _claude_sse('{"ok": true}')
+
+    w = _claude_server(monkeypatch, flaky, retries=2)
+    assert w.complete("hi") == '{"ok": true}' and len(calls) == 2
+
+    def down(req):
+        raise httpx2.ConnectError("[SSL: UNEXPECTED_EOF_WHILE_READING]")
+
+    w = _claude_server(monkeypatch, down)
+    with pytest.raises(llm.NetworkError, match="Anthropic Claude"):
+        w.complete("hi")

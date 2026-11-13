@@ -1,6 +1,6 @@
 """The AI writer the Brain thinks with.
 
-Reuses the writers the studio already has (Ollama, Gemini, Hugging Face). There is
+Reuses the writers the studio already has (Claude, Gemini, Ollama, Hugging Face). There is
 no rule-based fallback here on purpose: if no AI writer is connected the Brain says
 so instead of pretending.
 """
@@ -24,13 +24,13 @@ class BrainUnavailable(RuntimeError):
 NO_LLM_HELP = (
     "The AI Director needs an AI writer, and none is connected yet. The free option: create a key at "
     "https://aistudio.google.com/apikey, put GEMINI_API_KEY=your-key in the .env file, and restart the app. "
-    "(Ollama running on your own computer also works.)"
+    "(A paid Anthropic Claude key, ANTHROPIC_API_KEY, or Ollama on your own computer also works.)"
 )
 
 
 def available_llms() -> list:
     """Connected AI writers, best first. LLM_PROVIDER, when it names one, goes first."""
-    order = ["gemini", "ollama", "huggingface"]
+    order = ["anthropic", "gemini", "ollama", "huggingface"]
     if settings.llm_provider in order:
         order.remove(settings.llm_provider)
         order.insert(0, settings.llm_provider)

@@ -4,6 +4,8 @@
 * GeminiWriter      - Google Gemini through a free Google AI Studio key (GEMINI_API_KEY).
                       Google's free tier is rate-limited and Google may use free-tier
                       content to improve its products.
+* ClaudeWriter      - Anthropic Claude through an API key (ANTHROPIC_API_KEY). Paid per use,
+                      billed by Anthropic separately from any Claude.ai subscription.
 * HuggingFaceWriter - Hugging Face Inference router (free tier, needs HF_TOKEN, rate limited).
 * TemplateWriter    - no AI. Splits the user's own script/prompt into timed scenes.
                       Always available; it never invents narration.
@@ -17,6 +19,7 @@ import re
 import time
 from dataclasses import dataclass
 
+import anthropic
 import httpx
 
 from ..config import settings
@@ -381,6 +384,68 @@ def _retry_delay(r: httpx.Response, default: float) -> float:
     return min(90.0, default)
 
 
+# Claude models that can hand a declined request to another model on Anthropic's side.
+_FALLBACK_MODELS = ("claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
+
+
+class ClaudeWriter(_LLMWriter):
+    name = "anthropic"
+    label = "Anthropic Claude (API key, paid per use)"
+    batch = 20
+    NET_ATTEMPTS = 4
+
+    def available(self) -> bool:
+        return bool(settings.anthropic_api_key)
+
+    def _client(self) -> anthropic.Anthropic:
+        # The SDK retries dropped connections, 429 and 5xx itself, with backoff.
+        return anthropic.Anthropic(api_key=settings.anthropic_api_key, max_retries=self.NET_ATTEMPTS,
+                                   timeout=anthropic.Timeout(600, connect=30))
+
+    def complete(self, prompt: str) -> str:
+        model = settings.anthropic_model
+        kw: dict = {}
+        if model.startswith(_FALLBACK_MODELS):
+            # if Claude's safety check declines a request, Anthropic re-runs it on another model
+            kw = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        try:
+            # streamed, so the connection is never silent while Claude thinks
+            with self._client().beta.messages.stream(
+                model=model, max_tokens=32000,
+                output_config={"effort": settings.anthropic_effort},
+                messages=[{"role": "user", "content": prompt}], **kw,
+            ) as stream:
+                msg = stream.get_final_message()
+        except anthropic.AuthenticationError as e:
+            raise WriterError(f"Claude rejected the API key. Check ANTHROPIC_API_KEY in .env. ({e.message})") from e
+        except anthropic.PermissionDeniedError as e:
+            raise WriterError(f"This Anthropic key may not use {model}. ({e.message})") from e
+        except anthropic.NotFoundError as e:
+            raise WriterError(f"Anthropic does not offer the model '{model}'. Set ANTHROPIC_MODEL in .env to a current "
+                              f"model (see https://platform.claude.com/docs/en/about-claude/models). ({e.message})") from e
+        except anthropic.RateLimitError as e:
+            raise WriterError(f"Claude rate limit reached; try again in a minute. ({e.message})") from e
+        except anthropic.BadRequestError as e:
+            text = e.message
+            if "credit" in text.lower() or "billing" in text.lower():
+                raise WriterError("Your Anthropic account has no credit left. Add credit at "
+                                  f"https://platform.claude.com/settings/billing. ({text})") from e
+            raise WriterError(f"Claude rejected the request: {text}") from e
+        except anthropic.APIStatusError as e:
+            raise WriterError(f"Claude returned {e.status_code}: {e.message}") from e
+        except anthropic.APIConnectionError as e:
+            raise NetworkError(f"Could not connect to Anthropic Claude ({type(e).__name__}: {e}). "
+                               + NETWORK_HELP.format(service="Anthropic Claude")) from e
+        if msg.stop_reason == "refusal":
+            raise WriterError("Claude declined to write this. Try rewording the idea.")
+        text = "".join(b.text for b in msg.content if b.type == "text")
+        if not text:
+            raise WriterError("Claude returned no text")
+        if msg.stop_reason == "max_tokens":
+            log.warning("Claude reply hit max_tokens; the JSON may be cut off")
+        return text
+
+
 class HuggingFaceWriter(_LLMWriter):
     name = "huggingface"
     label = "Hugging Face Inference (free tier, rate-limited)"
@@ -406,7 +471,7 @@ class HuggingFaceWriter(_LLMWriter):
         return r.json()["choices"][0]["message"]["content"]
 
 
-WRITERS = {w.name: w for w in (OllamaWriter(), GeminiWriter(), HuggingFaceWriter(), TemplateWriter())}
+WRITERS = {w.name: w for w in (OllamaWriter(), ClaudeWriter(), GeminiWriter(), HuggingFaceWriter(), TemplateWriter())}
 
 
 def pick_writer() -> object:
@@ -415,7 +480,7 @@ def pick_writer() -> object:
         w = WRITERS.get(choice)
         if w and w.available():
             return w
-    for name in ("ollama", "gemini", "huggingface"):
+    for name in ("ollama", "anthropic", "gemini", "huggingface"):
         if WRITERS[name].available():
             return WRITERS[name]
     return WRITERS["template"]

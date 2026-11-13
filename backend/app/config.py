@@ -53,12 +53,16 @@ class Settings:
     self_hosted: bool = _bool("SELF_HOSTED", False)
 
     # ---- Providers ----
-    llm_provider: str = os.getenv("LLM_PROVIDER", "auto")  # auto|ollama|gemini|huggingface|template
+    llm_provider: str = os.getenv("LLM_PROVIDER", "auto")  # auto|ollama|anthropic|gemini|huggingface|template
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2")
     # Free Google AI Studio key: Gemini writes storyboards (free tier, rate-limited).
     gemini_api_key: str | None = _opt("GEMINI_API_KEY")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    # Anthropic Claude: paid per use (console key), separate from a Claude.ai subscription
+    anthropic_api_key: str | None = _opt("ANTHROPIC_API_KEY")
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
+    anthropic_effort: str = os.getenv("ANTHROPIC_EFFORT", "medium")  # low|medium|high: lower is cheaper
     # Pollinations: free AI images with no account (about one image per 15 seconds).
     pollinations_enabled: bool = _bool("POLLINATIONS", True)
     pollinations_model: str = os.getenv("POLLINATIONS_MODEL", "flux")
