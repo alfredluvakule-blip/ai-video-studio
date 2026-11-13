@@ -1,4 +1,4 @@
-# AI Video Studio
+# Luvakule AI
 
 A free-first, self-hostable studio that turns an idea, a script, or a set of photos into a narrated,
 subtitled MP4 of up to **60 minutes**. Scenes are storyboarded, reviewed and approved, rendered in the

@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 AUDIO_ARGS = ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2"]
 NARRATION_LEAD = 0.3  # seconds of silence before narration starts
 FADE = 0.4
+CLIP_SOUND_UNDER_VOICE = 0.25  # an uploaded video's own sound, kept quietly under the narrator
 
 
 def project_dir(project_id: str) -> Path:
@@ -116,8 +117,13 @@ def render_scene(scene: Scene, project: Project, source_asset: Asset | None, voi
     provider = ""
     visual_in: list[str]
     vf: str
+    clip_has_sound = False
     if source_asset and source_asset.kind == "video":
         provider = "upload:video"
+        try:
+            clip_has_sound = any(st.get("codec_type") == "audio" for st in ff.probe_streams(source_asset.path))
+        except Exception:
+            clip_has_sound = False
         visual_in = ["-stream_loop", "-1", "-i", source_asset.path]
         vf = f"setpts=PTS/{speed},{_fit_filter(w, h)},fps={fps}"
     else:
@@ -162,10 +168,26 @@ def render_scene(scene: Scene, project: Project, source_asset: Asset | None, voi
     if scene.transition == "fade":
         vf += f",fade=t=in:st=0:d={FADE},fade=t=out:st={seconds - FADE:.3f}:d={FADE}"
 
-    if narration:
+    # The uploaded video's own sound (input 0) is kept: on its own when the
+    # scene has no narration, or quietly underneath the narrator when it does.
+    # (atempo keeps the sound in step when the scene speed is changed; outside
+    # 0.5x-2x the sound would be unpleasant, so it is dropped.)
+    clip_audio = ""
+    if clip_has_sound and 0.5 <= speed <= 2.0:
+        tempo = f"atempo={speed:.3f}," if speed != 1.0 else ""
+        clip_audio = f"[0:a]{tempo}aformat=sample_rates=48000:channel_layouts=stereo"
+    if narration and clip_audio:
+        audio_in = ["-i", str(narration)]
+        delay_ms = int(NARRATION_LEAD * 1000)
+        af = (f"[1:a]adelay={delay_ms}|{delay_ms},apad[n];{clip_audio},volume={CLIP_SOUND_UNDER_VOICE}[c];"
+              f"[n][c]amix=inputs=2:duration=first:normalize=0,atrim=0:{seconds},asetpts=N/SR/TB[a]")
+    elif narration:
         audio_in = ["-i", str(narration)]
         delay_ms = int(NARRATION_LEAD * 1000)
         af = f"[1:a]adelay={delay_ms}|{delay_ms},apad,atrim=0:{seconds},asetpts=N/SR/TB[a]"
+    elif clip_audio:
+        audio_in = ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+        af = f"{clip_audio},apad,atrim=0:{seconds},asetpts=N/SR/TB[a]"
     else:
         audio_in = ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
         af = f"[1:a]atrim=0:{seconds},asetpts=N/SR/TB[a]"

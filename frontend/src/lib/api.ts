@@ -1,7 +1,7 @@
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 export type Scene = {
-  id: string; position: number; duration: number; title: string; visual_description: string;
+  id: string; project_id: string; position: number; duration: number; title: string; visual_description: string;
   camera: string; character: string; dialogue: string; voiceover: string; sound_effects: string;
   prompt: string; image_asset_id: string | null; voice_asset_id: string | null; transition: string;
   speed: number; approved: boolean; status: "draft" | "queued" | "rendering" | "done" | "failed";

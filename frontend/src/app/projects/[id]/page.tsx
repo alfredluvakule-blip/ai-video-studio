@@ -113,7 +113,7 @@ export default function ProjectPage() {
           <SceneCard key={s.id} scene={s} cameras={meta?.cameras ?? [s.camera]} images={images}
             selected={selected.has(s.id)}
             onSelect={(v) => setSelected((x) => { const n = new Set(x); if (v) n.add(s.id); else n.delete(s.id); return n; })}
-            onChanged={reload} />
+            onChanged={reload} onAssetAdded={(a) => setImages((x) => [a, ...x])} />
         ))}
       </div>
 

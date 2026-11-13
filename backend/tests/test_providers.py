@@ -144,13 +144,15 @@ def test_voice_override_and_credit_notes(monkeypatch):
 
 
 def test_render_uses_ai_pictures_and_labels_fallbacks(pollinations, monkeypatch):
-    import time
+    import threading
     import uuid
 
     from fastapi.testclient import TestClient
 
     from app.main import app
 
+    # the pollinations fixture turns time.sleep into a no-op, so wait with an Event instead
+    pause = threading.Event().wait
     calls = {"n": 0}
 
     def flaky_get(url, params=None, **kw):  # first scene gets a picture, the second does not
@@ -172,7 +174,7 @@ def test_render_uses_ai_pictures_and_labels_fallbacks(pollinations, monkeypatch)
             p = c.get(f"/api/projects/{pid}", headers=h).json()
             if p["status"] == "storyboard_ready":
                 break
-            time.sleep(0.25)
+            pause(0.25)
         # make the second scene's picture prompt identifiable for the fake service
         s2 = p["scenes"][1]
         c.patch(f"/api/scenes/{s2['id']}", headers=h, json={"prompt": "second scene forest"})
@@ -181,7 +183,7 @@ def test_render_uses_ai_pictures_and_labels_fallbacks(pollinations, monkeypatch)
             p = c.get(f"/api/projects/{pid}", headers=h).json()
             if p["status"] in ("done", "failed"):
                 break
-            time.sleep(0.25)
+            pause(0.25)
         assert p["status"] == "done", p["error"]
         used = [s["provider_used"] for s in p["scenes"]]
         assert used[0].startswith("pollinations")

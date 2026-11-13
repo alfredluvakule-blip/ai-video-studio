@@ -41,7 +41,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <aside className={`fixed inset-y-0 left-0 z-30 w-64 shrink-0 border-r border-white/10 bg-[#0e1018] p-4 transition-transform lg:static lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
         <Link href="/" className="mb-6 flex items-center gap-2 px-2">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-violet-600 font-bold text-white">▶</span>
-          <span className="font-semibold text-white">AI Video Studio</span>
+          <span className="font-semibold text-white">Luvakule AI</span>
         </Link>
         <nav className="space-y-1">
           {NAV.map((n) => (
@@ -62,7 +62,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/10 bg-[#0b0d14]/90 px-4 py-3 backdrop-blur lg:hidden">
           <button className="btn-ghost px-3" onClick={() => setOpen(true)} aria-label="Open menu">☰</button>
-          <span className="font-semibold">AI Video Studio</span>
+          <span className="font-semibold">Luvakule AI</span>
         </header>
         <main className="mx-auto max-w-7xl p-4 md:p-8">{children}</main>
       </div>

@@ -29,7 +29,7 @@ export default function Login() {
         <div className="flex items-center gap-2">
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-violet-600 font-bold text-white">▶</span>
           <div>
-            <div className="font-semibold text-white">AI Video Studio</div>
+            <div className="font-semibold text-white">Luvakule AI</div>
             <div className="text-xs text-slate-400">Free to use. No subscription, no card.</div>
           </div>
         </div>
