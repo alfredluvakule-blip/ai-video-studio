@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Asset, Meta, Project, api, fmtDuration, mediaUrl } from "@/lib/api";
 import { usePolling } from "@/lib/hooks";
+import ProjectMemory from "@/components/ProjectMemory";
 import SceneCard from "@/components/SceneCard";
 import { ErrorNote, RenderProgress, StatusBadge } from "@/components/ui";
 
@@ -63,6 +64,8 @@ export default function ProjectPage() {
       )}
       <ErrorNote error={error || p.error || ""} />
       {overLimit && <ErrorNote error={`This project is ${fmtDuration(p.progress.planned_seconds)}, over the ${meta?.limits.max_project_minutes}-minute limit. Delete or shorten scenes before rendering.`} />}
+
+      <ProjectMemory projectId={p.id} onScenesChanged={reload} />
 
       {p.status === "storyboarding" && <div className="card animate-pulse text-slate-300">Writing the storyboard… this page updates by itself.</div>}
 

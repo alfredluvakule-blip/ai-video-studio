@@ -6,6 +6,7 @@ import { api, getToken, setToken } from "@/lib/api";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: "◧" },
+  { href: "/director", label: "AI Director", icon: "✦" },
   { href: "/create", label: "Create Video", icon: "＋" },
   { href: "/text-to-video", label: "Text to Video", icon: "✎" },
   { href: "/image-to-video", label: "Image to Video", icon: "▣" },

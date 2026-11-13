@@ -130,7 +130,7 @@ export default function CreateForm({ mode }: { mode: Mode }) {
           </div>
           {mode === "text" && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Length (minutes)"><input className="input" type="number" min={0.1} max={meta?.limits.max_project_minutes ?? 60} step={0.5}
+              <Field label="Length (minutes)"><input className="input" type="number" min={0.5} max={meta?.limits.max_project_minutes ?? 60} step={0.5}
                 value={f.target_seconds / 60} onChange={(e) => set("target_seconds", Math.round(Number(e.target.value) * 60))} /></Field>
               <Field label="Scene length (s)"><input className="input" type="number" min={3} max={30} value={f.scene_seconds} onChange={(e) => set("scene_seconds", Number(e.target.value))} /></Field>
             </div>

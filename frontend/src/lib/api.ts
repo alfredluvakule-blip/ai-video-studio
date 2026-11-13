@@ -97,3 +97,54 @@ export const STATUS_LABEL: Record<Project["status"], string> = {
   draft: "Draft", storyboarding: "Writing storyboard", storyboard_ready: "Storyboard ready",
   rendering: "Rendering scenes", assembling: "Assembling video", done: "Video ready", failed: "Needs attention",
 };
+
+// ---------------------------------------------------------------- Luvakule AI Brain
+
+export type Route = { name: string; label: string; connected: boolean; paid?: boolean; motion: string; note: string; cost_per_second: number | null };
+
+export type BrainStatus = {
+  writer: { available: boolean; name: string | null; label: string | null; help: string | null };
+  routes: Route[]; length_presets: number[]; max_seconds: number; languages: Record<string, string>;
+  styles: string[]; shots: string[]; movements: string[]; narration_styles: string[]; music: string[];
+};
+
+export type PlanScene = {
+  number: number; chapter_id: string; duration: number; title: string; narration: string; dialogue: string;
+  characters: string[]; location: string; action: string; expression: string; shot: string; movement: string;
+  lighting: string; transition: "cut" | "fade"; sound_effects: string; music_cue: string;
+  image_prompt?: string; video_prompt?: string; negative_prompt?: string; camera?: string; prompt_edited?: boolean; scene_id?: string;
+};
+
+export type PlanCharacter = { name: string; role: string; appearance: string; clothing: string; personality: string; voice: string; reference_asset_ids: string[]; locked: boolean };
+export type PlanLocation = { name: string; description: string; lighting: string; locked: boolean };
+export type PlanCheck = { level: "warning" | "info"; scene: number | null; text: string };
+
+export type PlanBody = {
+  settings?: Record<string, unknown>;
+  brief?: {
+    title: string; logline: string; audience: string; goal: string; style: string; visual_style: string; tone: string;
+    camera_language: string; narration_style: string; music_mood: string; is_song: boolean; assumptions: string[]; questions: string[];
+  };
+  characters?: PlanCharacter[]; locations?: PlanLocation[];
+  chapters?: { id: string; title: string; summary: string; seconds: number }[];
+  scenes?: PlanScene[]; checks?: PlanCheck[];
+  audio?: { narrator: string; narration_style: string; music_mood: string; music_note: string; sound_effects_note: string; song_note: string };
+  editing?: { subtitles: string; aspect: string; resolution: number; fps: number; transitions: number };
+  recommendation?: { route: string; label: string; reasons: string[]; connected: string[]; not_connected: string[] };
+  estimate?: { scenes: number; video_seconds: number; cost_usd: number; cost_note: string; ai_writer_calls: number; ai_writer_note: string; estimated_minutes: number; time_basis: string };
+};
+
+export type AgentActivity = { id: number; agent: string; action: string; status: "running" | "done" | "failed" | "skipped"; provider: string | null; llm_calls: number; detail: string; started_at: string; finished_at: string | null };
+
+export type Plan = {
+  id: string; idea: string; settings: { target_seconds: number; scene_seconds: number; language: string; style: string; aspect: string; voice: string; resolution: number; main_character: string; reference_asset_ids: string[] };
+  status: "queued" | "planning" | "ready" | "failed" | "approved"; stage: string; error: string | null; provider: string | null;
+  llm_calls: number; project_id: string | null; title: string; scene_count: number; created_at: string; updated_at: string;
+  plan?: PlanBody; activity?: AgentActivity[];
+};
+
+export type MemoryItem = { id: string; project_id: string; kind: "character" | "location" | "style" | "fact"; name: string; description: string; data: Record<string, unknown>; locked: boolean; updated_at: string };
+
+export const PLAN_STATUS: Record<Plan["status"], string> = {
+  queued: "Waiting to start", planning: "Agents at work", ready: "Plan ready for review", failed: "Needs attention", approved: "Approved",
+};

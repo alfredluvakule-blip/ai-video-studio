@@ -13,7 +13,7 @@ from sqlalchemy import update
 
 from . import queue
 from .db import session_scope
-from .models import Asset, Job, Project, RenderLog, Scene, now
+from .models import Asset, BrainPlan, Job, Project, RenderLog, Scene, now
 from .pipeline import render
 from .providers.llm import StoryboardRequest, pick_writer
 
@@ -236,6 +236,10 @@ def recover(starting_up: bool = True) -> int:
             if s.id in ids and s.status == "rendering":
                 s.status, s.render_started_at = "queued", None
         assembling = [p.id for p in db.query(Project).filter(Project.status == "assembling")]
+        plans = [b.id for b in db.query(BrainPlan).filter(BrainPlan.status.in_(["queued", "planning"]))] if starting_up else []
+    for bid in plans:  # a Director Mode plan that was being made when the app stopped
+        queue.enqueue("director_plan", bid, True)
+        n += 1
     for sid in ids:
         queue.enqueue("render_scene", sid, None)
         n += 1
@@ -245,4 +249,10 @@ def recover(starting_up: bool = True) -> int:
     return n
 
 
-TASKS = {"storyboard": storyboard, "render_scene": render_scene, "assemble": assemble}
+def director_plan(plan_id: str, fill_only: bool = False) -> None:
+    from .brain import director
+
+    director.run(plan_id, fill_only=bool(fill_only))
+
+
+TASKS = {"storyboard": storyboard, "render_scene": render_scene, "assemble": assemble, "director_plan": director_plan}

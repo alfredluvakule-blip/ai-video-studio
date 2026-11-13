@@ -35,7 +35,7 @@ def _register(name: str):
     return _t
 
 
-for _n in ("storyboard", "render_scene", "assemble"):
+for _n in ("storyboard", "render_scene", "assemble", "director_plan"):
     _register(_n)
 
 

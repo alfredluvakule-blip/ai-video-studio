@@ -188,3 +188,11 @@ def test_render_uses_ai_pictures_and_labels_fallbacks(pollinations, monkeypatch)
         used = [s["provider_used"] for s in p["scenes"]]
         assert used[0].startswith("pollinations")
         assert used[1].startswith("titlecard (fallback: pollinations failed)")
+
+
+def test_subtitle_lines_keep_short_endings_without_crashing():
+    from app.pipeline.render import _chunks
+
+    assert _chunks("one two three four five six seven eight nine ten") == ["one two three four five six seven eight nine ten"]
+    words = [f"w{i}" for i in range(18)]
+    assert _chunks(" ".join(words)) == [" ".join(words[:8]), " ".join(words[8:])]
