@@ -70,7 +70,7 @@ def render_speed_ratio(db: Session) -> float | None:
 
 def scene_dict(s: Scene) -> dict:
     return {
-        "id": s.id, "position": s.position, "duration": s.duration, "title": s.title,
+        "id": s.id, "project_id": s.project_id, "position": s.position, "duration": s.duration, "title": s.title,
         "visual_description": s.visual_description, "camera": s.camera, "character": s.character,
         "dialogue": s.dialogue, "voiceover": s.voiceover, "sound_effects": s.sound_effects, "prompt": s.prompt,
         "image_asset_id": s.image_asset_id, "voice_asset_id": s.voice_asset_id, "transition": s.transition,

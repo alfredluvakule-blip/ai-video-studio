@@ -120,6 +120,55 @@ def test_project_length_limit(client):
     assert r.status_code == 422
 
 
+def test_scene_uses_uploaded_photo_and_video(client, tmp_path):
+    """A photo or video uploaded on a storyboard scene is used in the final video,
+    and an uploaded video keeps its own sound."""
+    h = _user(client)
+    r = client.post("/api/projects", headers=h, json={
+        "title": "My own footage", "mode": "script", "resolution": 480, "scene_seconds": 3,
+        "script": "This is my village at sunrise. Here children walk to school.",
+    })
+    pid = r.json()["id"]
+    p = _wait(client, h, pid, {"storyboard_ready"})
+    s0, s1 = p["scenes"][:2]
+
+    photo, clip = tmp_path / "village.png", tmp_path / "school.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=green:s=320x240", "-frames:v", "1", str(photo)], check=True)
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:d=2", "-f", "lavfi", "-i",
+                    "sine=frequency=440:d=2", "-shortest", "-pix_fmt", "yuv420p", str(clip)], check=True)
+    ids = []
+    for f, mime in ((photo, "image/png"), (clip, "video/mp4")):
+        r = client.post("/api/media", headers=h, data={"project_id": pid}, files={"file": (f.name, f.read_bytes(), mime)})
+        assert r.status_code == 200, r.text
+        ids.append(r.json()["id"])
+    assert client.patch(f"/api/scenes/{s0['id']}", headers=h, json={"image_asset_id": ids[0]}).status_code == 200
+    assert client.patch(f"/api/scenes/{s1['id']}", headers=h, json={"image_asset_id": ids[1], "voiceover": ""}).status_code == 200
+
+    client.post(f"/api/projects/{pid}/render", headers=h, json={"approve_all": True})
+    p = _wait(client, h, pid, {"done", "failed"})
+    assert p["status"] == "done", p["error"]
+    by_id = {s["id"]: s for s in p["scenes"]}
+    assert by_id[s0["id"]]["provider_used"].startswith("upload:image")
+    assert by_id[s1["id"]]["provider_used"].startswith("upload:video")
+
+    # the video scene kept its own sound (a 440 Hz tone), so it is not silent
+    from app.models import Scene
+    from app.db import SessionLocal
+    clip_path = SessionLocal().get(Scene, s1["id"]).clip_path
+    vol = subprocess.run(["ffmpeg", "-i", clip_path, "-af", "volumedetect", "-f", "null", "-"], capture_output=True, text=True).stderr
+    mean = float(vol.split("mean_volume:")[1].split("dB")[0])
+    assert mean > -40, vol
+
+    # with a voice-over too, the narrator and the video's sound are mixed
+    client.patch(f"/api/scenes/{s1['id']}", headers=h, json={"voiceover": "Here children walk to school."})
+    client.post(f"/api/projects/{pid}/render", headers=h, json={"approve_all": True})
+    p = _wait(client, h, pid, {"done", "failed"})
+    assert p["status"] == "done", p["error"]
+
+    # an asset in use cannot be deleted from the library
+    assert client.delete(f"/api/media/{ids[1]}", headers=h).status_code == 409
+
+
 def test_upload_validation(client):
     h = _user(client)
     r = client.post("/api/media", headers=h, files={"file": ("fake.png", b"not an image", "image/png")})
@@ -137,3 +186,16 @@ def test_inline_comment_values_count_as_unset(monkeypatch):
     assert config._opt("COMFYUI_URL") is None
     monkeypatch.setenv("HF_TOKEN", "hf_abc")
     assert config._opt("HF_TOKEN") == "hf_abc"
+
+
+def test_invite_code_controls_signup(client, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "signup_code", "village-2026")
+    assert client.get("/api/meta").json()["limits"]["signup_code_required"] is True
+    creds = {"email": "friend@test.io", "password": "password123"}
+    assert client.post("/api/auth/register", json=creds).status_code == 403
+    assert client.post("/api/auth/register", json={**creds, "invite_code": "wrong"}).status_code == 403
+    r = client.post("/api/auth/register", json={**creds, "invite_code": "village-2026"})
+    assert r.status_code == 200, r.text
+    # signing in never needs the code
+    assert client.post("/api/auth/login", json=creds).status_code == 200

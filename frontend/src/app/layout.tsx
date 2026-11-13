@@ -3,8 +3,8 @@ import "./globals.css";
 import Shell from "@/components/Shell";
 
 export const metadata: Metadata = {
-  title: "AI Video Studio",
-  description: "Free-first AI video studio: turn an idea, script or photos into a video up to one hour long.",
+  title: "Luvakule AI",
+  description: "Luvakule AI, a free-first AI video studio: turn an idea, script or photos into a video up to one hour long.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

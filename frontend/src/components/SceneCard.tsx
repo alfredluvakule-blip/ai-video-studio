@@ -8,12 +8,14 @@ const SCENE_STATUS: Record<Scene["status"], string> = {
   done: "bg-emerald-500/20 text-emerald-300", failed: "bg-red-500/20 text-red-300",
 };
 
-export default function SceneCard({ scene, cameras, images, selected, onSelect, onChanged }: {
+export default function SceneCard({ scene, cameras, images, selected, onSelect, onChanged, onAssetAdded }: {
   scene: Scene; cameras: string[]; images: Asset[]; selected: boolean;
-  onSelect: (v: boolean) => void; onChanged: () => void;
+  onSelect: (v: boolean) => void; onChanged: () => void; onAssetAdded?: (a: Asset) => void;
 }) {
   const [s, setS] = useState(scene);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const own = scene.image_asset_id ? images.find((a) => a.id === scene.image_asset_id) : undefined;
   const [err, setErr] = useState("");
   useEffect(() => setS(scene), [scene]);
   const locked = scene.status === "queued" || scene.status === "rendering";
@@ -36,6 +38,17 @@ export default function SceneCard({ scene, cameras, images, selected, onSelect, 
     const fd = new FormData(); fd.append("file", file);
     try { const a = await api<Asset>("/media", { form: fd }); await save({ voice_asset_id: a.id }); }
     catch (e) { setErr((e as Error).message); }
+  }
+
+  async function uploadVisual(file: File | undefined) {
+    if (!file) return;
+    setUploading(true); setErr("");
+    const fd = new FormData(); fd.append("file", file); fd.append("project_id", scene.project_id);
+    try {
+      const a = await api<Asset>("/media", { form: fd });
+      onAssetAdded?.(a);
+      await save({ image_asset_id: a.id });
+    } catch (e) { setErr((e as Error).message); } finally { setUploading(false); }
   }
 
   return (
@@ -64,16 +77,24 @@ export default function SceneCard({ scene, cameras, images, selected, onSelect, 
           {scene.has_clip ? (
             <video controls preload="none" className="w-full rounded-lg bg-black" poster={scene.has_image ? mediaUrl(`/scenes/${scene.id}/image`, { bust: String(scene.attempts) }) : undefined}
               src={mediaUrl(`/scenes/${scene.id}/clip`, { bust: String(scene.attempts) })} />
+          ) : scene.image_asset_id && own?.kind === "video" ? (
+            <video controls preload="metadata" className="w-full rounded-lg bg-black" src={mediaUrl(`/media/${scene.image_asset_id}/file`)} />
           ) : scene.image_asset_id ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={mediaUrl(`/media/${scene.image_asset_id}/file`)} alt="" className="w-full rounded-lg object-cover" />
           ) : (
             <div className="grid aspect-video place-items-center rounded-lg bg-black/40 text-xs text-slate-500">Not rendered yet</div>
           )}
-          <Field label="Image / video reference">
+          <label className={`btn-ghost block w-full cursor-pointer text-center text-sm ${locked || uploading ? "pointer-events-none opacity-50" : ""}`}>
+            {uploading ? "Uploading…" : scene.image_asset_id ? "⬆ Replace with another photo or video" : "⬆ Upload your own photo or video"}
+            <input type="file" className="hidden" accept="image/*,video/*" disabled={locked || uploading}
+              onChange={(e) => { uploadVisual(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+          <Field label="Picture for this scene" hint={own?.kind === "video" ? "Your video is used for this scene and keeps its own sound (quieter under the voice-over)." : undefined}>
             <select className="input" disabled={locked} value={scene.image_asset_id ?? ""} onChange={(e) => save({ image_asset_id: e.target.value || null })}>
-              <option value="">Generate from prompt</option>
-              {images.map((a) => <option key={a.id} value={a.id}>{a.filename}</option>)}
+              <option value="">AI picture from the prompt</option>
+              {scene.image_asset_id && !own && <option value={scene.image_asset_id}>Your upload</option>}
+              {images.map((a) => <option key={a.id} value={a.id}>{a.kind === "video" ? "🎬 " : "🖼 "}{a.filename}</option>)}
             </select>
           </Field>
           <div className="grid grid-cols-2 gap-2">

@@ -12,6 +12,7 @@ Camera = Literal["zoom_in", "zoom_out", "pan_left", "pan_right", "pan_up", "pan_
 class Credentials(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=8, max_length=200)
+    invite_code: str | None = Field(default=None, max_length=200)  # only checked when signing up
 
     @field_validator("email")
     @classmethod

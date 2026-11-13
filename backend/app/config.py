@@ -36,6 +36,10 @@ class Settings:
         default_factory=lambda: os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
     )
 
+    # When set, creating an account needs this invite code. Set it before putting
+    # the app online, so only people you give the code to can sign up.
+    signup_code: str | None = _opt("SIGNUP_CODE")
+
     # Optional Supabase auth: when set, Supabase access tokens (HS256) are accepted.
     supabase_jwt_secret: str | None = _opt("SUPABASE_JWT_SECRET")
 

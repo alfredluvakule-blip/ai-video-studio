@@ -46,10 +46,28 @@ services:
   web:
     build:
       context: ./frontend
-      args: {NEXT_PUBLIC_API_URL: "http://localhost:8000"}
-    ports: ["3000:3000"]
+      # empty = the app calls its API on the same web address (through "site" below)
+      args: {NEXT_PUBLIC_API_URL: ""}
     restart: unless-stopped
     depends_on: [api]
+  # Front door: http://localhost:3000 serves the app and sends /api to the backend.
+  site:
+    image: caddy:2.8.4-alpine
+    env_file: [{path: .env, required: false}]
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddy:/data]
+    ports: ["3000:3000"]
+    restart: unless-stopped
+    depends_on: [web, api]
+  # Optional free public link from this PC (Cloudflare quick tunnel, no account needed).
+  # Start:  docker compose --profile online up -d
+  # Link:   docker compose logs tunnel   (look for https://....trycloudflare.com)
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: [online]
+    command: tunnel --no-autoupdate --url http://site:3000
+    restart: unless-stopped
+    depends_on: [site]
 volumes:
   pgdata:
   media:
+  caddy:
